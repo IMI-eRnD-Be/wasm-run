@@ -1,0 +1,24 @@
+[package]
+name = "wasm-run-proc-macro"
+version = "0.1.0"
+authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/IMI-eRnD-Be/wasm-run"
+homepage = "https://github.com/IMI-eRnD-Be/wasm-run"
+documentation = "https://docs.rs/wasm-run"
+exclude = ["/.gitignore", "/.github"]
+keywords = ["wasm", "cargo"]
+categories = ["development-tools::build-utils"]
+description = "Build tool that replaces `cargo run` to build WASM projects"
+
+[lib]
+# NOTE: cargo-readme needs this key for some reason
+path = "src/lib.rs"
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.24"
+quote = "1.0.7"
+syn = { version = "1.0.53", features = ["full"] }

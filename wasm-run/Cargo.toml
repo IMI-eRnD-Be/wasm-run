@@ -1,0 +1,25 @@
+[package]
+name = "wasm-run"
+version = "0.1.0"
+authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/IMI-eRnD-Be/wasm-run"
+homepage = "https://github.com/IMI-eRnD-Be/wasm-run"
+documentation = "https://docs.rs/wasm-run"
+exclude = ["/.gitignore", "/.github"]
+keywords = ["wasm", "cargo"]
+categories = ["development-tools::build-utils"]
+description = "Build tool that replaces `cargo run` to build WASM projects"
+
+[dependencies]
+anyhow = "1.0"
+async-std = { version = "1.7.0", features = ["attributes"] }
+futures = "0.3.8"
+notify = "4.0.12"
+structopt = "0.3"
+tide = "0.15"
+wasm-bindgen-cli-support = "0.2.68"
+wasm-pack = "0.9.1"
+wasm-run-proc-macro = { path = "../wasm-run-proc-macro", version = "0.1.0" }

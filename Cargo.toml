@@ -1,0 +1,6 @@
+[workspace]
+members = [
+	"wasm-run",
+	"wasm-run/tests/test-crate",
+	"wasm-run-proc-macro",
+]
