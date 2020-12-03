@@ -6,12 +6,7 @@ pub fn generate<'a>(
     item: ItemEnum,
     other_cli_commands: Option<Path>,
     hooks: impl Iterator<Item = (&'a Ident, &'a Path)>,
-    build: Option<Path>,
-    serve: Option<Path>,
 ) -> syn::Result<TokenStream> {
-    let build = build.unwrap_or_else(|| syn::parse_str("::wasm_run::DefaultBuildArgs").unwrap());
-    let serve = serve.unwrap_or_else(|| syn::parse_str("::wasm_run::DefaultServeArgs").unwrap());
-
     let hooks = hooks
         .map(|(ident, path)| quote_spanned! {ident.span()=> #ident: Box::new(#path), })
         .collect::<Vec<_>>();
@@ -25,6 +20,18 @@ pub fn generate<'a>(
         ..
     } = item;
 
+    let build = if variants.iter().find(|x| x.ident == "Build").is_none() {
+        Some(quote! { Build(::wasm_run::DefaultBuildArgs), })
+    } else {
+        None
+    };
+
+    let serve = if variants.iter().find(|x| x.ident == "Serve").is_none() {
+        Some(quote! { Serve(::wasm_run::DefaultServeArgs), })
+    } else {
+        None
+    };
+
     let other_cli_commands = other_cli_commands
         .map(|x| quote! { #x(cli)? })
         .unwrap_or_else(|| quote! { {} });
@@ -32,8 +39,8 @@ pub fn generate<'a>(
     Ok(quote! {
         #( #attrs )*
         #vis enum #ident #generics {
-            Serve(#serve),
-            Build(#build),
+            #serve
+            #build
             #variants
         }
 

@@ -4,16 +4,12 @@ use syn::{Ident, Path, Token};
 
 pub struct Attr {
     pub hooks: HashMap<Ident, Path>,
-    pub build: Option<Path>,
-    pub serve: Option<Path>,
     pub other_cli_commands: Option<Path>,
 }
 
 impl Attr {
     pub fn parse(input: ParseStream) -> Result<Self> {
         let mut hooks = HashMap::new();
-        let mut build = None;
-        let mut serve = None;
         let mut other_cli_commands = None;
 
         while !input.is_empty() {
@@ -22,8 +18,6 @@ impl Attr {
             let path: Path = input.parse()?;
 
             match ident.to_string().as_str() {
-                "build_command" => build = Some(path),
-                "serve_command" => serve = Some(path),
                 "other_cli_commands" => other_cli_commands = Some(path),
                 "prepare_build" | "post_build" | "serve" | "watch" => {
                     if hooks.insert(ident.clone(), path).is_some() {
@@ -42,8 +36,6 @@ impl Attr {
 
         Ok(Self {
             hooks,
-            build,
-            serve,
             other_cli_commands,
         })
     }
