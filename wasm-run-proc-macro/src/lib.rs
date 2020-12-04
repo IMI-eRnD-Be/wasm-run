@@ -11,10 +11,20 @@ pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemEnum);
     let attr_parser::Attr {
         other_cli_commands,
-        hooks,
+        prepare_build,
+        post_build,
+        serve,
+        watch,
     } = parse_macro_input!(attr with attr_parser::Attr::parse);
 
-    main_generator::generate(item, other_cli_commands, hooks.iter())
-        .unwrap()
-        .into()
+    main_generator::generate(
+        item,
+        other_cli_commands,
+        prepare_build,
+        post_build,
+        serve,
+        watch,
+    )
+    .unwrap()
+    .into()
 }

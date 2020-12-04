@@ -1,16 +1,16 @@
 use proc_macro2::TokenStream;
-use quote::{quote, quote_spanned};
-use syn::{Ident, ItemEnum, Path};
+use quote::{quote, quote_spanned, ToTokens};
+use syn::spanned::Spanned;
+use syn::{Fields, ItemEnum, Path};
 
-pub fn generate<'a>(
+pub fn generate(
     item: ItemEnum,
     other_cli_commands: Option<Path>,
-    hooks: impl Iterator<Item = (&'a Ident, &'a Path)>,
+    prepare_build: Option<Path>,
+    post_build: Option<Path>,
+    serve: Option<Path>,
+    watch: Option<Path>,
 ) -> syn::Result<TokenStream> {
-    let hooks = hooks
-        .map(|(ident, path)| quote_spanned! {ident.span()=> #ident: Box::new(#path), })
-        .collect::<Vec<_>>();
-
     let ItemEnum {
         attrs,
         vis,
@@ -20,27 +20,99 @@ pub fn generate<'a>(
         ..
     } = item;
 
-    let build = if variants.iter().find(|x| x.ident == "Build").is_none() {
-        Some(quote! { Build(::wasm_run::DefaultBuildArgs), })
-    } else {
-        None
-    };
+    let (build_variant, build_ty) =
+        if let Some(variant) = variants.iter().find(|x| x.ident == "Build") {
+            match &variant.fields {
+                Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                    (None, fields.unnamed[0].ty.to_token_stream())
+                }
+                _ => (
+                    None,
+                    quote_spanned!(variant.fields.span()=>
+                compile_error!("only the tuple variant with only one struct is allowed. \
+                    Example: Build(YourBuildArgs)")),
+                ),
+            }
+        } else {
+            let ty = quote!(::wasm_run::DefaultBuildArgs);
+            (Some(quote! { Build(#ty), }), ty)
+        };
 
-    let serve = if variants.iter().find(|x| x.ident == "Serve").is_none() {
-        Some(quote! { Serve(::wasm_run::DefaultServeArgs), })
-    } else {
-        None
-    };
+    let (serve_variant, serve_ty) =
+        if let Some(variant) = variants.iter().find(|x| x.ident == "Serve") {
+            match &variant.fields {
+                Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                    (None, fields.unnamed[0].ty.to_token_stream())
+                }
+                _ => (
+                    None,
+                    quote_spanned!(variant.fields.span()=>
+                compile_error!("only the tuple variant with only one struct is allowed. \
+                    Example: Serve(YourBuildArgs)")),
+                ),
+            }
+        } else {
+            let ty = quote!(::wasm_run::DefaultServeArgs);
+            (Some(quote! { Serve(#ty), }), ty)
+        };
 
     let other_cli_commands = other_cli_commands
-        .map(|x| quote! { #x(cli)? })
-        .unwrap_or_else(|| quote! { {} });
+        .map(|x| quote! { cli => #x(cli)?, })
+        .unwrap_or_else(|| {
+            if variants
+                .iter()
+                .filter(|x| x.ident != "Build" && x.ident != "Serve")
+                .count()
+                > 0
+            {
+                quote! {
+                    cli => compile_error!(
+                        "missing `other_cli_commands` to handle all the variants",
+                    ),
+                }
+            } else {
+                quote! {}
+            }
+        });
+
+    let prepare_build = prepare_build.map(|path| {
+        quote_spanned! {path.span()=>
+            prepare_build: Box::new(|args, wasm_js| {
+                let args = args.downcast_ref::<#build_ty>().unwrap();
+                #path(args, wasm_js)
+            }),
+        }
+    });
+    let post_build = post_build.map(|path| {
+        quote_spanned! {path.span()=>
+            post_build: Box::new(|args| {
+                let args = args.downcast_ref::<#build_ty>().unwrap();
+                #path(args)
+            }),
+        }
+    });
+    let serve = serve.map(|path| {
+        quote_spanned! {path.span()=>
+            serve: Box::new(|args, app| {
+                let args = args.downcast_ref::<#serve_ty>().unwrap();
+                #path(args, app)
+            }),
+        }
+    });
+    let watch = watch.map(|path| {
+        quote_spanned! {path.span()=>
+            watch: Box::new(|args, watcher| {
+                let args = args.downcast_ref::<#serve_ty>().unwrap();
+                #path(args, watcher)
+            }),
+        }
+    });
 
     Ok(quote! {
         #( #attrs )*
         #vis enum #ident #generics {
-            #serve
-            #build
+            #serve_variant
+            #build_variant
             #variants
         }
 
@@ -50,14 +122,17 @@ pub fn generate<'a>(
 
             let cli = #ident::from_args();
             let hooks = ::wasm_run::Hooks {
-                #( #hooks )*
+                #prepare_build
+                #post_build
+                #serve
+                #watch
                 .. ::wasm_run::Hooks::default()
             };
 
             match cli {
                 #ident::Build(args) => args.run(hooks)?,
                 #ident::Serve(args) => args.run(hooks)?,
-                cli => #other_cli_commands,
+                #other_cli_commands
             }
 
             Ok(())

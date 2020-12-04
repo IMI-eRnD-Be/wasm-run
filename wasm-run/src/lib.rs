@@ -3,6 +3,7 @@
 #![warn(missing_docs)]
 
 use anyhow::{Context, Result};
+use downcast_rs::*;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -29,7 +30,7 @@ pub struct DefaultBuildArgs {
 }
 
 /// A trait that allow overriding the `build` command.
-pub trait BuildArgs {
+pub trait BuildArgs: Downcast {
     /// Build directory output.
     fn build_path(&self) -> &PathBuf;
 
@@ -41,6 +42,8 @@ pub trait BuildArgs {
         build(BuildProfile::Release, &self, &hooks)
     }
 }
+
+impl_downcast!(BuildArgs);
 
 impl BuildArgs for DefaultBuildArgs {
     fn build_path(&self) -> &PathBuf {
@@ -71,7 +74,7 @@ pub struct DefaultServeArgs {
 }
 
 /// A trait that allow overriding the `serve` command.
-pub trait ServeArgs: Send {
+pub trait ServeArgs: Downcast + Send {
     /// Activate HTTP logs.
     fn log(&self) -> bool;
 
@@ -100,6 +103,8 @@ pub trait ServeArgs: Send {
         })
     }
 }
+
+impl_downcast!(ServeArgs);
 
 impl ServeArgs for DefaultServeArgs {
     fn log(&self) -> bool {
@@ -132,13 +137,14 @@ pub struct Hooks {
     pub serve: Box<dyn Fn(&dyn ServeArgs, &mut tide::Server<()>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before starting to watch for changes in files.
-    pub watch: Box<dyn Fn(&dyn ServeArgs, notify::RecommendedWatcher) -> Result<()> + Send + Sync>,
+    pub watch:
+        Box<dyn Fn(&dyn ServeArgs, &mut notify::RecommendedWatcher) -> Result<()> + Send + Sync>,
 }
 
 impl Default for Hooks {
     fn default() -> Self {
         Self {
-            watch: Box::new(|_, mut watcher| {
+            watch: Box::new(|_, watcher| {
                 use notify::{RecursiveMode, Watcher};
 
                 for dir in &["src", "index.html"] {
@@ -260,10 +266,10 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
     let (tx, rx) = channel();
 
-    let watcher: RecommendedWatcher =
+    let mut watcher: RecommendedWatcher =
         Watcher::new(tx, Duration::from_secs(2)).context("could not initialize watcher")?;
 
-    (hooks.watch)(args, watcher)?;
+    (hooks.watch)(args, &mut watcher)?;
 
     let build_args = args.build_args();
 
