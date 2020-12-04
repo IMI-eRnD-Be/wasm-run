@@ -111,6 +111,8 @@ pub fn generate(
         }
     });
 
+    let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap();
+
     Ok(quote! {
         #( #attrs )*
         #vis enum #ident #generics {
@@ -133,9 +135,11 @@ pub fn generate(
                 .. ::wasm_run::Hooks::default()
             };
 
+            let crate_name = #crate_name.to_string();
+
             match cli {
-                #ident::Build(args) => args.run(hooks)?,
-                #ident::Serve(args) => args.run(hooks)?,
+                #ident::Build(args) => args.run(crate_name, hooks)?,
+                #ident::Serve(args) => args.run(crate_name, hooks)?,
                 #other_cli_commands
             }
 

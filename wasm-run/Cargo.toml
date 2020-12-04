@@ -16,6 +16,7 @@ description = "Build tool that replaces `cargo run` to build WASM projects"
 [dependencies]
 anyhow = "1.0"
 async-std = { version = "1.7.0", features = ["attributes"] }
+cargo_metadata = "0.12.1"
 downcast-rs = "1.2.0"
 futures = "0.3.8"
 notify = "4.0.12"

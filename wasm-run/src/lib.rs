@@ -3,6 +3,7 @@
 #![warn(missing_docs)]
 
 use anyhow::{Context, Result};
+use cargo_metadata::MetadataCommand;
 use downcast_rs::*;
 use std::env;
 use std::fs;
@@ -21,6 +22,8 @@ pub use notify;
 pub use structopt;
 pub use tide;
 
+const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
+
 /// Build arguments.
 #[derive(StructOpt, Debug)]
 pub struct DefaultBuildArgs {
@@ -35,11 +38,11 @@ pub trait BuildArgs: Downcast {
     fn build_path(&self) -> &PathBuf;
 
     /// Run the `build` command.
-    fn run(self, hooks: Hooks) -> Result<()>
+    fn run(self, crate_name: String, hooks: Hooks) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        build(BuildProfile::Release, &self, &hooks)
+        build(BuildProfile::Release, &self, &crate_name, &hooks)
     }
 }
 
@@ -90,14 +93,14 @@ pub trait ServeArgs: Downcast + Send {
     fn build_args(&self) -> &dyn BuildArgs;
 
     /// Run the `serve` command.
-    fn run(self, hooks: Hooks) -> Result<()>
+    fn run(self, crate_name: String, hooks: Hooks) -> Result<()>
     where
         Self: Sized + 'static,
     {
         async_std::task::block_on(async {
-            build(BuildProfile::Dev, self.build_args(), &hooks)?;
+            build(BuildProfile::Dev, self.build_args(), &crate_name, &hooks)?;
             let t1 = async_std::task::spawn(serve(&self, &hooks)?);
-            let t2 = async_std::task::spawn_blocking(move || watch(&self, &hooks));
+            let t2 = async_std::task::spawn_blocking(move || watch(&self, &crate_name, &hooks));
             futures::try_join!(t1, t2)?;
             Ok(())
         })
@@ -148,16 +151,22 @@ impl Default for Hooks {
                 use notify::{RecursiveMode, Watcher};
 
                 for dir in &["src", "index.html"] {
-                    watcher
-                        .watch(dir, RecursiveMode::Recursive)
-                        .with_context(|| format!("could not watch directory `{}`", dir))?;
+                    let _ = watcher.watch(dir, RecursiveMode::Recursive);
                 }
 
                 Ok(())
             }),
             prepare_build: Box::new(|args, wasm_js| {
-                fs::copy("index.html", args.build_path().join("index.html"))
-                    .context("could not copy index.html")?;
+                let index_path = args.build_path().join("index.html");
+
+                if fs::copy("index.html", &index_path).is_err() {
+                    fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
+                        format!(
+                            "could not copy index.html nor write default to `{}`",
+                            index_path.display()
+                        )
+                    })?;
+                }
                 fs::write(args.build_path().join("app.js"), wasm_js)?;
 
                 Ok(())
@@ -180,10 +189,20 @@ impl Default for Hooks {
     }
 }
 
-fn build(profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<()> {
+fn build(
+    profile: BuildProfile,
+    args: &dyn BuildArgs,
+    crate_name: &str,
+    hooks: &Hooks,
+) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
     let cwd = env::current_dir().context("could not get current directory")?;
+
+    let metadata = MetadataCommand::new()
+        .exec()
+        .context("could not get cargo metadata")?;
+
     wasm_pack::build::cargo_build_wasm(&cwd, profile, &[])
         .map_err(|err| err.compat())
         .context("could not build WASM")?;
@@ -197,15 +216,15 @@ fn build(profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<(
         )
     })?;
 
-    let wasm_path = cwd
-        .join("target")
+    let wasm_path = metadata
+        .target_directory
         .join("wasm32-unknown-unknown")
         .join(match profile {
             BuildProfile::Dev => "debug",
             BuildProfile::Release => "release",
             _ => unimplemented!(),
         })
-        .join(env!("CARGO_PKG_NAME"))
+        .join(crate_name)
         .with_extension("wasm");
     let app_wasm_path = build_path.join("app_bg.wasm");
 
@@ -259,7 +278,7 @@ fn serve(
     ))
 }
 
-fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
+fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
     use notify::{DebouncedEvent, RecommendedWatcher, Watcher};
     use std::sync::mpsc::channel;
     use std::time::Duration;
@@ -278,7 +297,7 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
         match rx.recv() {
             Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
-                if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
+                if let Err(err) = build(BuildProfile::Dev, build_args, crate_name, hooks) {
                     eprintln!("{}", err);
                 }
             }
