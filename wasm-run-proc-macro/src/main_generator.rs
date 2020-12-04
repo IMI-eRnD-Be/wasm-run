@@ -78,7 +78,10 @@ pub fn generate(
     let prepare_build = prepare_build.map(|path| {
         quote_spanned! {path.span()=>
             prepare_build: Box::new(|args, wasm_js| {
-                let args = args.downcast_ref::<#build_ty>().unwrap();
+                let args = args.downcast_ref::<#build_ty>()
+                    .expect("invalid type for `Build` command: the type in the command enum \
+                        must be the same than the type returned by `build_args()` \
+                        on the implementation of the trait `BuildArgs`");
                 #path(args, wasm_js)
             }),
         }
