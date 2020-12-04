@@ -29,8 +29,8 @@ pub fn generate(
                 _ => (
                     None,
                     quote_spanned!(variant.fields.span()=>
-                compile_error!("only the tuple variant with only one struct is allowed. \
-                    Example: Build(YourBuildArgs)")),
+                        compile_error!("only the tuple variant with only one struct is allowed. \
+                            Example: Build(YourBuildArgs)")),
                 ),
             }
         } else {
@@ -47,8 +47,8 @@ pub fn generate(
                 _ => (
                     None,
                     quote_spanned!(variant.fields.span()=>
-                compile_error!("only the tuple variant with only one struct is allowed. \
-                    Example: Serve(YourBuildArgs)")),
+                        compile_error!("only the tuple variant with only one struct is allowed. \
+                            Example: Serve(YourBuildArgs)")),
                 ),
             }
         } else {
