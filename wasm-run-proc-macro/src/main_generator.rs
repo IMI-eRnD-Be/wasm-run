@@ -121,6 +121,7 @@ pub fn generate(
             use ::wasm_run::{BuildArgs, ServeArgs};
 
             let cli = #ident::from_args();
+            #[allow(clippy::needless_update)]
             let hooks = ::wasm_run::Hooks {
                 #prepare_build
                 #post_build
