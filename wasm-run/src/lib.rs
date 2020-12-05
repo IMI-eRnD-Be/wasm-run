@@ -2,12 +2,12 @@
 
 #![warn(missing_docs)]
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use cargo_metadata::MetadataCommand;
 use downcast_rs::*;
-use std::env;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(feature = "serve")]
 use std::pin::Pin;
 use structopt::StructOpt;
 pub use wasm_pack::command::build::BuildProfile;
@@ -15,11 +15,14 @@ pub use wasm_pack::command::build::BuildProfile;
 pub use wasm_run_proc_macro::*;
 
 pub use anyhow;
+#[cfg(feature = "serve")]
 pub use async_std;
+#[cfg(feature = "serve")]
 pub use futures;
 pub use notify;
 #[doc(hidden)]
 pub use structopt;
+#[cfg(feature = "serve")]
 pub use tide;
 
 const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
@@ -32,7 +35,7 @@ pub struct DefaultBuildArgs {
     pub build_path: PathBuf,
 }
 
-/// A trait that allow overriding the `build` command.
+/// A trait that allows overriding the `build` command.
 pub trait BuildArgs: Downcast {
     /// Build directory output.
     fn build_path(&self) -> &PathBuf;
@@ -76,17 +79,20 @@ pub struct DefaultServeArgs {
     pub build_args: DefaultBuildArgs,
 }
 
-/// A trait that allow overriding the `serve` command.
+/// A trait that allows overriding the `serve` command.
 pub trait ServeArgs: Downcast + Send {
     /// Activate HTTP logs.
+    #[cfg(feature = "serve")]
     fn log(&self) -> bool;
 
     /// IP address to bind.
     ///
     /// Use 0.0.0.0 to expose the server to your network.
+    #[cfg(feature = "serve")]
     fn ip(&self) -> &str;
 
     /// Port number.
+    #[cfg(feature = "serve")]
     fn port(&self) -> u16;
 
     /// Build arguments.
@@ -97,27 +103,37 @@ pub trait ServeArgs: Downcast + Send {
     where
         Self: Sized + 'static,
     {
-        async_std::task::block_on(async {
-            build(BuildProfile::Dev, self.build_args(), &crate_name, &hooks)?;
-            let t1 = async_std::task::spawn(serve(&self, &hooks)?);
-            let t2 = async_std::task::spawn_blocking(move || watch(&self, &crate_name, &hooks));
-            futures::try_join!(t1, t2)?;
-            Ok(())
-        })
+        build(BuildProfile::Dev, self.build_args(), &crate_name, &hooks)?;
+        #[cfg(feature = "serve")]
+        {
+            async_std::task::block_on(async {
+                let t1 = async_std::task::spawn(serve(&self, &hooks)?);
+                let t2 = async_std::task::spawn_blocking(move || watch(&self, &crate_name, &hooks));
+                futures::try_join!(t1, t2)?;
+                Ok(())
+            })
+        }
+        #[cfg(not(feature = "serve"))]
+        {
+            watch(&self, &crate_name, &hooks)
+        }
     }
 }
 
 impl_downcast!(ServeArgs);
 
 impl ServeArgs for DefaultServeArgs {
+    #[cfg(feature = "serve")]
     fn log(&self) -> bool {
         self.log
     }
 
+    #[cfg(feature = "serve")]
     fn ip(&self) -> &str {
         &self.ip
     }
 
+    #[cfg(feature = "serve")]
     fn port(&self) -> u16 {
         self.port
     }
@@ -130,12 +146,15 @@ impl ServeArgs for DefaultServeArgs {
 /// Hooks.
 pub struct Hooks {
     /// This hook will be run before the WASM binary is optimized.
-    pub prepare_build: Box<dyn Fn(&dyn BuildArgs, String) -> Result<()> + Send + Sync>,
+    #[allow(clippy::type_complexity)]
+    pub prepare_build:
+        Box<dyn Fn(&dyn BuildArgs, BuildProfile, String, Vec<u8>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run after the WASM is optimized.
-    pub post_build: Box<dyn Fn(&dyn BuildArgs) -> Result<()> + Send + Sync>,
+    pub post_build: Box<dyn Fn(&dyn BuildArgs, BuildProfile) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before running the HTTP server.
+    #[cfg(feature = "serve")]
     #[allow(clippy::type_complexity)]
     pub serve: Box<dyn Fn(&dyn ServeArgs, &mut tide::Server<()>) -> Result<()> + Send + Sync>,
 
@@ -149,15 +168,30 @@ impl Default for Hooks {
         Self {
             watch: Box::new(|_, watcher| {
                 use notify::{RecursiveMode, Watcher};
+                use std::collections::HashSet;
+                use std::iter::FromIterator;
 
-                for dir in &["src", "index.html"] {
-                    let _ = watcher.watch(dir, RecursiveMode::Recursive);
+                let metadata = MetadataCommand::new()
+                    .exec()
+                    .context("could not get cargo metadata")?;
+
+                let _ = watcher.watch("index.html", RecursiveMode::Recursive);
+
+                let members: HashSet<_> = HashSet::from_iter(metadata.workspace_members);
+
+                for package in metadata.packages.iter().filter(|x| members.contains(&x.id)) {
+                    let _ = watcher.watch(&package.manifest_path, RecursiveMode::Recursive);
+                    let _ = watcher.watch(
+                        package.manifest_path.parent().unwrap().join("src"),
+                        RecursiveMode::Recursive,
+                    );
                 }
 
                 Ok(())
             }),
-            prepare_build: Box::new(|args, wasm_js| {
-                let index_path = args.build_path().join("index.html");
+            prepare_build: Box::new(|args, _, wasm_js, wasm_bin| {
+                let build_path = args.build_path();
+                let index_path = build_path.join("index.html");
 
                 if fs::copy("index.html", &index_path).is_err() {
                     fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
@@ -168,10 +202,13 @@ impl Default for Hooks {
                     })?;
                 }
                 fs::write(args.build_path().join("app.js"), wasm_js)?;
+                fs::write(build_path.join("app_bg.wasm"), wasm_bin)
+                    .context("could not write WASM file")?;
 
                 Ok(())
             }),
-            post_build: Box::new(|_| Ok(())),
+            post_build: Box::new(|_, _| Ok(())),
+            #[cfg(feature = "serve")]
             serve: Box::new(|args, app| {
                 use tide::{Body, Response};
 
@@ -197,13 +234,21 @@ fn build(
 ) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
-    let cwd = env::current_dir().context("could not get current directory")?;
-
     let metadata = MetadataCommand::new()
         .exec()
         .context("could not get cargo metadata")?;
 
-    wasm_pack::build::cargo_build_wasm(&cwd, profile, &[])
+    let crate_path = if let Some(package) = metadata.packages.iter().find(|x| x.name == crate_name)
+    {
+        package.manifest_path.parent().unwrap()
+    } else {
+        bail!(
+            "Could not find crate named `{}` in the workspace",
+            crate_name
+        );
+    };
+
+    wasm_pack::build::cargo_build_wasm(crate_path, profile, &[])
         .map_err(|err| err.compat())
         .context("could not build WASM")?;
 
@@ -226,7 +271,6 @@ fn build(
         })
         .join(crate_name)
         .with_extension("wasm");
-    let app_wasm_path = build_path.join("app_bg.wasm");
 
     let mut output = Bindgen::new()
         .input_path(wasm_path)
@@ -237,9 +281,9 @@ fn build(
         .context("could not generate WASM bindgen file")?;
 
     let wasm_js = output.js().to_owned();
-    fs::write(app_wasm_path, output.wasm_mut().emit_wasm()).context("could not write WASM file")?;
+    let wasm_bin = output.wasm_mut().emit_wasm();
 
-    (hooks.prepare_build)(args, wasm_js)?;
+    (hooks.prepare_build)(args, profile, wasm_js, wasm_bin)?;
 
     if matches!(profile, BuildProfile::Release) {
         wasm_pack::wasm_opt::run(
@@ -254,11 +298,12 @@ fn build(
         .context("could not run wasm-opt")?; // TODO remove wasm-pack?
     }
 
-    (hooks.post_build)(args)?;
+    (hooks.post_build)(args, profile)?;
 
     Ok(())
 }
 
+#[cfg(feature = "serve")]
 fn serve(
     args: &dyn ServeArgs,
     hooks: &Hooks,
@@ -292,13 +337,68 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
 
     let build_args = args.build_args();
 
+    #[cfg(not(feature = "serve"))]
+    fn run_server() -> std::io::Result<impl std::any::Any> {
+        use std::process::{Child, Command};
+
+        struct ServerProcess(Child);
+
+        impl Drop for ServerProcess {
+            fn drop(&mut self) {
+                // TODO: cleaner exit on Unix
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        let mut found = false;
+        let args = std::env::args().skip(1).map(|x| {
+            if !found && x == "serve" {
+                found = true;
+                "run-server".to_owned()
+            } else {
+                x
+            }
+        });
+
+        Command::new(std::env::current_exe().unwrap())
+            .args(args)
+            .spawn()
+            .map(ServerProcess)
+    }
+
+    #[cfg(not(feature = "serve"))]
+    let mut process_guard = Some(run_server()?);
+
     loop {
         use DebouncedEvent::*;
 
         match rx.recv() {
             Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
-                if let Err(err) = build(BuildProfile::Dev, build_args, crate_name, hooks) {
-                    eprintln!("{}", err);
+                #[cfg(all(feature = "full-restart", unix, not(serve)))]
+                {
+                    use std::os::unix::process::CommandExt;
+
+                    drop(crate_name);
+                    drop(build_args);
+                    drop(process_guard.take());
+
+                    let err = std::process::Command::new("cargo")
+                        .args(&["run", "--"])
+                        .args(std::env::args_os().skip(1))
+                        .exec();
+                    eprintln!("could not restart process: {}", err);
+                }
+                #[cfg(not(all(feature = "full-restart", unix, not(serve))))]
+                {
+                    if let Err(err) = build(BuildProfile::Dev, build_args, &crate_name, hooks) {
+                        eprintln!("{}", err);
+                    }
+                    #[cfg(not(feature = "serve"))]
+                    match run_server() {
+                        Ok(guard) => drop(process_guard.replace(guard)),
+                        Err(err) => eprintln!("running server error: {}", err),
+                    }
                 }
             }
             Ok(_) => {}

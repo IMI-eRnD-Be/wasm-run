@@ -1,16 +1,10 @@
+use crate::attr_parser::Attr;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
-use syn::{Fields, ItemEnum, Path};
+use syn::{Fields, ItemEnum};
 
-pub fn generate(
-    item: ItemEnum,
-    other_cli_commands: Option<Path>,
-    prepare_build: Option<Path>,
-    post_build: Option<Path>,
-    serve: Option<Path>,
-    watch: Option<Path>,
-) -> syn::Result<TokenStream> {
+pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
     let ItemEnum {
         attrs,
         vis,
@@ -19,6 +13,17 @@ pub fn generate(
         variants,
         ..
     } = item;
+    let Attr {
+        other_cli_commands,
+        #[cfg(not(feature = "serve"))]
+        run_server,
+        prepare_build,
+        post_build,
+        #[cfg(feature = "serve")]
+        serve,
+        watch,
+        crate_name,
+    } = attr;
 
     let (build_variant, build_ty) =
         if let Some(variant) = variants.iter().find(|x| x.ident == "Build") {
@@ -35,7 +40,13 @@ pub fn generate(
             }
         } else {
             let ty = quote!(::wasm_run::DefaultBuildArgs);
-            (Some(quote! { Build(#ty), }), ty)
+            (
+                Some(quote! {
+                    /// Build for production.
+                    Build(#ty),
+                }),
+                ty,
+            )
         };
 
     let (serve_variant, serve_ty) =
@@ -48,13 +59,27 @@ pub fn generate(
                     None,
                     quote_spanned!(variant.fields.span()=>
                         compile_error!("only the tuple variant with only one struct is allowed. \
-                            Example: Serve(YourBuildArgs)")),
+                            Example: Serve(YourServeArgs)")),
                 ),
             }
         } else {
             let ty = quote!(::wasm_run::DefaultServeArgs);
-            (Some(quote! { Serve(#ty), }), ty)
+            (
+                Some(quote! {
+                    /// Run development server.
+                    Serve(#ty),
+                }),
+                ty,
+            )
         };
+
+    #[cfg(feature = "serve")]
+    let run_variant = quote! {};
+    #[cfg(not(feature = "serve"))]
+    let run_variant = quote! {
+        #[structopt(setting = ::wasm_run::structopt::clap::AppSettings::Hidden)]
+        RunServer(#serve_ty),
+    };
 
     let other_cli_commands = other_cli_commands
         .map(|x| quote! { cli => #x(cli)?, })
@@ -86,6 +111,7 @@ pub fn generate(
             }),
         }
     });
+
     let post_build = post_build.map(|path| {
         quote_spanned! {path.span()=>
             post_build: Box::new(|args| {
@@ -94,6 +120,8 @@ pub fn generate(
             }),
         }
     });
+
+    #[cfg(feature = "serve")]
     let serve = serve.map(|path| {
         quote_spanned! {path.span()=>
             serve: Box::new(|args, app| {
@@ -102,6 +130,9 @@ pub fn generate(
             }),
         }
     });
+    #[cfg(not(feature = "serve"))]
+    let serve = quote! {};
+
     let watch = watch.map(|path| {
         quote_spanned! {path.span()=>
             watch: Box::new(|args, watcher| {
@@ -111,19 +142,30 @@ pub fn generate(
         }
     });
 
-    let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap();
+    let crate_name = crate_name.map(|x| quote! { #x }).unwrap_or_else(|| {
+        let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap();
+        quote! { #crate_name }
+    });
+
+    #[cfg(feature = "serve")]
+    let run_server_arm = quote! {};
+    #[cfg(not(feature = "serve"))]
+    let run_server_arm = quote! {
+        #ident::RunServer(args) => #run_server(args)?,
+    };
 
     Ok(quote! {
         #( #attrs )*
         #vis enum #ident #generics {
             #serve_variant
             #build_variant
+            #run_variant
             #variants
         }
 
         fn main() -> ::wasm_run::anyhow::Result<()> {
             use ::wasm_run::structopt::StructOpt;
-            use ::wasm_run::{BuildArgs, ServeArgs};
+            use ::wasm_run::*;
 
             let cli = #ident::from_args();
             #[allow(clippy::needless_update)]
@@ -135,11 +177,13 @@ pub fn generate(
                 .. ::wasm_run::Hooks::default()
             };
 
+            let crate_name = #crate_name;
             let crate_name = #crate_name.to_string();
 
             match cli {
                 #ident::Build(args) => args.run(crate_name, hooks)?,
                 #ident::Serve(args) => args.run(crate_name, hooks)?,
+                #run_server_arm
                 #other_cli_commands
             }
 

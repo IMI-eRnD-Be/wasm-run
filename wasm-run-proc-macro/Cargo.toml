@@ -18,6 +18,9 @@ description = "Build tool that replaces `cargo run` to build WASM projects"
 path = "src/lib.rs"
 proc-macro = true
 
+[features]
+serve = []
+
 [dependencies]
 proc-macro2 = "1.0.24"
 quote = "1.0.7"

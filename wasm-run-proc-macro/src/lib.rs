@@ -9,22 +9,7 @@ use syn::{parse_macro_input, ItemEnum};
 #[proc_macro_attribute]
 pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemEnum);
-    let attr_parser::Attr {
-        other_cli_commands,
-        prepare_build,
-        post_build,
-        serve,
-        watch,
-    } = parse_macro_input!(attr with attr_parser::Attr::parse);
+    let attr = parse_macro_input!(attr with attr_parser::Attr::parse);
 
-    main_generator::generate(
-        item,
-        other_cli_commands,
-        prepare_build,
-        post_build,
-        serve,
-        watch,
-    )
-    .unwrap()
-    .into()
+    main_generator::generate(item, attr).unwrap().into()
 }

@@ -1,13 +1,7 @@
-#[test]
-fn ui() {
+fn test_crate(path: &str) {
     let output = std::process::Command::new("cargo")
-        .env("RUSTFLAGS", "-Zmacro-backtrace")
-        .args(&[
-            "+nightly",
-            "build",
-            "--manifest-path",
-            "tests/test-crate/Cargo.toml",
-        ])
+        .current_dir(path)
+        .args(&["build"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -16,4 +10,10 @@ fn ui() {
     println!("stdout:\n{}\n", stdout);
     eprintln!("stderr:\n{}\n", stderr);
     assert!(output.status.success());
+}
+
+#[test]
+fn examples() {
+    test_crate("tests/examples/basic");
+    test_crate("tests/examples/backend-and-frontend");
 }
