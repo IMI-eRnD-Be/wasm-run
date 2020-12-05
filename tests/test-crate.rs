@@ -1,5 +1,8 @@
-fn test_crate(path: &str) {
+fn build_crate(path: &std::path::Path) {
     let output = std::process::Command::new("cargo")
+        // NOTE: this variable forces cargo to use the same toolchain but for the Rocket example
+        //       we need nightly.
+        .env_remove("RUSTUP_TOOLCHAIN")
         .current_dir(path)
         .args(&["build"])
         .output()
@@ -14,6 +17,7 @@ fn test_crate(path: &str) {
 
 #[test]
 fn examples() {
-    test_crate("tests/examples/basic");
-    test_crate("tests/examples/backend-and-frontend");
+    let examples = std::path::PathBuf::from("examples");
+    build_crate(&examples.join("basic"));
+    build_crate(&examples.join("backend-and-frontend"));
 }

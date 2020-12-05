@@ -102,21 +102,21 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
 
     let prepare_build = prepare_build.map(|path| {
         quote_spanned! {path.span()=>
-            prepare_build: Box::new(|args, wasm_js| {
+            prepare_build: Box::new(|args, profile, wasm_js, wasm_bin| {
                 let args = args.downcast_ref::<#build_ty>()
                     .expect("invalid type for `Build` command: the type in the command enum \
                         must be the same than the type returned by `build_args()` \
                         on the implementation of the trait `BuildArgs`");
-                #path(args, wasm_js)
+                #path(args, profile, wasm_js, wasm_bin)
             }),
         }
     });
 
     let post_build = post_build.map(|path| {
         quote_spanned! {path.span()=>
-            post_build: Box::new(|args| {
+            post_build: Box::new(|args, profile| {
                 let args = args.downcast_ref::<#build_ty>().unwrap();
-                #path(args)
+                #path(args, profile)
             }),
         }
     });

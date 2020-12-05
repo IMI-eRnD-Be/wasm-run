@@ -60,12 +60,17 @@ impl ServeArgs for ServeCommand {
     }
 }
 
-fn prepare_build(args: &BuildCommand, _wasm_js: String) -> Result<()> {
+fn prepare_build(
+    args: &BuildCommand,
+    _profile: BuildProfile,
+    _wasm_js: String,
+    _wasm_bin: Vec<u8>,
+) -> Result<()> {
     let _i = args.i;
     Ok(())
 }
 
-fn post_build(args: &BuildCommand) -> Result<()> {
+fn post_build(args: &BuildCommand, _profile: BuildProfile) -> Result<()> {
     let _i = args.i;
     Ok(())
 }

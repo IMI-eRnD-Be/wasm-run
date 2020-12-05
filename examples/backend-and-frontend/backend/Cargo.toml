@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 rocket = "0.4.6"
 structopt = "0.3"
-wasm-run = { path = "../../../..", default-features = false, features = ["full-restart"] }
+wasm-run = { path = "../../..", default-features = false, features = ["full-restart"] }
