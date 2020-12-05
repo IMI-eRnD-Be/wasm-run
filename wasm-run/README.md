@@ -1,5 +1,1 @@
-# wasm-run
-
-`wasm-run`
-
-License: MIT OR Apache-2.0
+../README.md
