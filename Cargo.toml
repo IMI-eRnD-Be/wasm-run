@@ -30,3 +30,8 @@ tide = { version = "0.15", optional = true }
 wasm-bindgen-cli-support = "0.2.68"
 wasm-pack = "0.9.1"
 wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.1.0" }
+
+[workspace]
+members = [
+	"examples/basic",
+]

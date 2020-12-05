@@ -17,7 +17,7 @@ impl Attr {
     pub fn parse(input: ParseStream) -> Result<Self> {
         let crate_name = input.parse().ok();
 
-        if crate_name.is_some() {
+        if crate_name.is_some() && !input.is_empty() {
             input.parse::<Token![,]>()?;
         }
 
