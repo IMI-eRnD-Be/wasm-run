@@ -40,6 +40,10 @@ impl BuildArgs for BuildCommand {
     fn build_path(&self) -> &std::path::PathBuf {
         todo!()
     }
+
+    fn profiling(&self) -> bool {
+        todo!()
+    }
 }
 
 impl ServeArgs for ServeCommand {

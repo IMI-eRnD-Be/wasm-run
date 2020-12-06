@@ -33,7 +33,7 @@
 //! # Additional Information
 //!
 //!  *  You can use this library to build examples in the `examples/` directory of your project.
-//!     `cargo run --example your_example -- serve`. But you will need to specific the name of the
+//!     `cargo run --example your_example -- serve`. But you will need to specify the name of the
 //!     WASM crate in your project and it must be present in the workspace. Please check the
 //!     ["example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/example.rs) example.
 //!  *  If you want to use your own backend you will need to disable the `serve` feature by
@@ -53,8 +53,8 @@ use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
 use std::pin::Pin;
+use std::process::Command;
 use structopt::StructOpt;
-pub use wasm_pack::command::build::BuildProfile;
 
 pub use wasm_run_proc_macro::*;
 
@@ -71,18 +71,36 @@ pub use tide;
 
 const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+/// A build profile for the WASM.
+pub enum BuildProfile {
+    /// Development profile (no `--release`, no optimization).
+    Dev,
+    /// Release profile (`--profile`, `-O2 -Os`).
+    Release,
+    /// Release profile (`--profile`, `-O2 --debuginfo`).
+    Profiling,
+}
+
 /// Build arguments.
 #[derive(StructOpt, Debug)]
 pub struct DefaultBuildArgs {
     /// Build directory output.
     #[structopt(long, default_value = "build")]
     pub build_path: PathBuf,
+
+    /// Create a profiling build. Enable optimizations and debug info.
+    #[structopt(long)]
+    pub profiling: bool,
 }
 
 /// A trait that allows overriding the `build` command.
 pub trait BuildArgs: Downcast {
     /// Build directory output.
     fn build_path(&self) -> &PathBuf;
+
+    /// Create a profiling build. Enable optimizations and debug info.
+    fn profiling(&self) -> bool;
 
     /// Run the `build` command.
     fn run(self, crate_name: String, hooks: Hooks) -> Result<()>
@@ -98,6 +116,10 @@ impl_downcast!(BuildArgs);
 impl BuildArgs for DefaultBuildArgs {
     fn build_path(&self) -> &PathBuf {
         &self.build_path
+    }
+
+    fn profiling(&self) -> bool {
+        self.profiling
     }
 }
 
@@ -271,12 +293,16 @@ impl Default for Hooks {
 }
 
 fn build(
-    profile: BuildProfile,
+    mut profile: BuildProfile,
     args: &dyn BuildArgs,
     crate_name: &str,
     hooks: &Hooks,
 ) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
+
+    if args.profiling() {
+        profile = BuildProfile::Profiling;
+    }
 
     let metadata = MetadataCommand::new()
         .exec()
@@ -287,14 +313,35 @@ fn build(
         package.manifest_path.parent().unwrap()
     } else {
         bail!(
-            "Could not find crate named `{}` in the workspace",
+            "could not find crate named `{}` in the workspace",
             crate_name
         );
     };
 
-    wasm_pack::build::cargo_build_wasm(crate_path, profile, &[])
-        .map_err(|err| err.compat())
-        .context("could not build WASM")?;
+    let status = Command::new("cargo")
+        .args(&[
+            "build",
+            "--lib",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--manifest-path",
+        ])
+        .arg(crate_path)
+        .args(match profile {
+            BuildProfile::Profiling => &["--release"] as &[&str],
+            BuildProfile::Release => &["--release"],
+            BuildProfile::Dev => &[],
+        })
+        .status()
+        .context("could not start build process")?;
+
+    if !status.success() {
+        if let Some(code) = status.code() {
+            bail!("build process exit with code {}", code);
+        } else {
+            bail!("build process has been terminated by a signal");
+        }
+    }
 
     let build_path = args.build_path();
     let _ = fs::remove_dir_all(build_path);
@@ -309,9 +356,9 @@ fn build(
         .target_directory
         .join("wasm32-unknown-unknown")
         .join(match profile {
-            BuildProfile::Dev => "debug",
+            BuildProfile::Profiling => "release",
             BuildProfile::Release => "release",
-            _ => unimplemented!(),
+            BuildProfile::Dev => "debug",
         })
         .join(crate_name)
         .with_extension("wasm");
@@ -327,20 +374,13 @@ fn build(
     let wasm_js = output.js().to_owned();
     let wasm_bin = output.wasm_mut().emit_wasm();
 
-    (hooks.prepare_build)(args, profile, wasm_js, wasm_bin)?;
+    let wasm_bin = match profile {
+        BuildProfile::Profiling => wasm_opt(wasm_bin, 0, 2, true)?,
+        BuildProfile::Release => wasm_opt(wasm_bin, 1, 2, false)?,
+        BuildProfile::Dev => wasm_bin,
+    };
 
-    if matches!(profile, BuildProfile::Release) {
-        wasm_pack::wasm_opt::run(
-            &wasm_pack::cache::get_wasm_pack_cache()
-                .map_err(|err| err.compat())
-                .context("could not get wasm-pack cache")?,
-            build_path,
-            &["-O".to_string()],
-            true,
-        )
-        .map_err(|err| err.compat())
-        .context("could not run wasm-opt")?; // TODO remove wasm-pack?
-    }
+    (hooks.prepare_build)(args, profile, wasm_js, wasm_bin)?;
 
     (hooks.post_build)(args, profile)?;
 
@@ -383,9 +423,7 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
 
     #[cfg(not(feature = "serve"))]
     fn run_server() -> std::io::Result<impl std::any::Any> {
-        use std::process::{Child, Command};
-
-        struct ServerProcess(Child);
+        struct ServerProcess(std::process::Child);
 
         impl Drop for ServerProcess {
             fn drop(&mut self) {
@@ -427,7 +465,7 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
                     drop(build_args);
                     drop(process_guard.take());
 
-                    let err = std::process::Command::new("cargo")
+                    let err = Command::new("cargo")
                         .args(&["run", "--"])
                         .args(std::env::args_os().skip(1))
                         .exec();
@@ -448,5 +486,24 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
             Ok(_) => {}
             Err(e) => eprintln!("watch error: {}", e),
         }
+    }
+}
+
+fn wasm_opt(
+    binary: Vec<u8>,
+    shrink_level: u32,
+    optimization_level: u32,
+    debug_info: bool,
+) -> Result<Vec<u8>> {
+    match binaryen::Module::read(&binary) {
+        Ok(mut module) => {
+            module.optimize(&binaryen::CodegenConfig {
+                shrink_level,
+                optimization_level,
+                debug_info,
+            });
+            Ok(module.write())
+        }
+        Err(()) => bail!("could not load WASM module"),
     }
 }
