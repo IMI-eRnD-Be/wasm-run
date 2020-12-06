@@ -401,6 +401,8 @@ fn serve(
 
     (hooks.serve)(args, &mut app)?;
 
+    eprintln!("Development server started: http://{}:{}", args.ip(), args.port());
+
     Ok(Box::pin(
         app.listen(format!("{}:{}", args.ip(), args.port()))
             .map_err(Into::into),
