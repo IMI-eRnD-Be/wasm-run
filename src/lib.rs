@@ -308,9 +308,9 @@ fn build(
         .exec()
         .context("could not get cargo metadata")?;
 
-    let crate_path = if let Some(package) = metadata.packages.iter().find(|x| x.name == crate_name)
+    let cargo_toml = if let Some(package) = metadata.packages.iter().find(|x| x.name == crate_name)
     {
-        package.manifest_path.parent().unwrap()
+        &package.manifest_path
     } else {
         bail!(
             "could not find crate named `{}` in the workspace",
@@ -326,7 +326,7 @@ fn build(
             "wasm32-unknown-unknown",
             "--manifest-path",
         ])
-        .arg(crate_path)
+        .arg(cargo_toml)
         .args(match profile {
             BuildProfile::Profiling => &["--release"] as &[&str],
             BuildProfile::Release => &["--release"],
@@ -360,7 +360,7 @@ fn build(
             BuildProfile::Release => "release",
             BuildProfile::Dev => "debug",
         })
-        .join(crate_name)
+        .join(crate_name.replace("-", "_"))
         .with_extension("wasm");
 
     let mut output = Bindgen::new()

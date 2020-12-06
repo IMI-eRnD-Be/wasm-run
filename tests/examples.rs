@@ -15,9 +15,26 @@ fn build_crate(path: &std::path::Path) {
     assert!(output.status.success());
 }
 
+fn run_crate(path: &std::path::Path, args: &[&str]) {
+    let output = std::process::Command::new("cargo")
+        .args(&["run", "--manifest-path"])
+        .arg(path.join("Cargo.toml"))
+        .arg("--")
+        .args(args)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    println!("stdout:\n{}\n", stdout);
+    eprintln!("stderr:\n{}\n", stderr);
+    assert!(output.status.success());
+}
+
 #[test]
 fn examples() {
     let examples = std::path::PathBuf::from("examples");
     build_crate(&examples.join("basic"));
     build_crate(&examples.join("backend-and-frontend"));
+    run_crate(&examples.join("test-crate-name-vs-pkg-name"), &["build"]);
 }

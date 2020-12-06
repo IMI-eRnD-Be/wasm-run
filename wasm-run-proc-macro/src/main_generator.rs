@@ -143,7 +143,7 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
     });
 
     let crate_name = crate_name.map(|x| quote! { #x }).unwrap_or_else(|| {
-        let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap();
+        let crate_name = std::env::var("CARGO_PKG_NAME").unwrap();
         quote! { #crate_name }
     });
 
