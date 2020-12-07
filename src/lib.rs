@@ -47,8 +47,9 @@
 #![warn(missing_docs)]
 
 use anyhow::{bail, Context, Result};
-use cargo_metadata::MetadataCommand;
+use cargo_metadata::{Metadata, MetadataCommand};
 use downcast_rs::*;
+use once_cell::sync::{Lazy, OnceCell};
 use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
@@ -86,8 +87,8 @@ pub enum BuildProfile {
 #[derive(StructOpt, Debug)]
 pub struct DefaultBuildArgs {
     /// Build directory output.
-    #[structopt(long, default_value = "build")]
-    pub build_path: PathBuf,
+    #[structopt(long)]
+    pub build_path: Option<PathBuf>,
 
     /// Create a profiling build. Enable optimizations and debug info.
     #[structopt(long)]
@@ -99,6 +100,34 @@ pub trait BuildArgs: Downcast {
     /// Build directory output.
     fn build_path(&self) -> &PathBuf;
 
+    /// Default path for the build/public directory.
+    fn default_build_path(&self) -> &PathBuf {
+        static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
+
+        DEFAULT_BUILD_PATH.get_or_init(|| {
+            self.metadata()
+                .expect("metadata has been initialized on startup; qed")
+                .workspace_root
+                .join("build")
+        })
+    }
+
+    /// Path to the `target` directory.
+    fn target_path(&self) -> &PathBuf {
+        &self
+            .metadata()
+            .expect("metadata has been initialized on startup; qed")
+            .target_directory
+    }
+
+    /// Metadata of the project.
+    fn metadata(&self) -> Result<&Metadata, &cargo_metadata::Error> {
+        static CRATE_METADATA: Lazy<Result<Metadata, cargo_metadata::Error>> =
+            Lazy::new(|| MetadataCommand::new().exec());
+
+        (*CRATE_METADATA).as_ref()
+    }
+
     /// Create a profiling build. Enable optimizations and debug info.
     fn profiling(&self) -> bool;
 
@@ -107,6 +136,9 @@ pub trait BuildArgs: Downcast {
     where
         Self: Sized + 'static,
     {
+        if let Err(err) = self.metadata() {
+            bail!("Could not get cargo metadata: {}", err);
+        }
         build(BuildProfile::Release, &self, &crate_name, &hooks)
     }
 }
@@ -115,7 +147,9 @@ impl_downcast!(BuildArgs);
 
 impl BuildArgs for DefaultBuildArgs {
     fn build_path(&self) -> &PathBuf {
-        &self.build_path
+        self.build_path
+            .as_ref()
+            .unwrap_or_else(|| self.default_build_path())
     }
 
     fn profiling(&self) -> bool {
