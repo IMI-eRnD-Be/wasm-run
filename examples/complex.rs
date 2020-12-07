@@ -4,7 +4,6 @@ use wasm_run::*;
 
 #[wasm_run::main(
     other_cli_commands = run_other_cli_commands,
-    prepare_build = prepare_build,
     post_build = post_build,
     serve = serve,
     watch = watch,
@@ -64,17 +63,12 @@ impl ServeArgs for ServeCommand {
     }
 }
 
-fn prepare_build(
+fn post_build(
     args: &BuildCommand,
     _profile: BuildProfile,
     _wasm_js: String,
     _wasm_bin: Vec<u8>,
 ) -> Result<()> {
-    let _i = args.i;
-    Ok(())
-}
-
-fn post_build(args: &BuildCommand, _profile: BuildProfile) -> Result<()> {
     let _i = args.i;
     Ok(())
 }

@@ -211,13 +211,10 @@ impl ServeArgs for DefaultServeArgs {
 
 /// Hooks.
 pub struct Hooks {
-    /// This hook will be run before the WASM binary is optimized.
-    #[allow(clippy::type_complexity)]
-    pub prepare_build:
-        Box<dyn Fn(&dyn BuildArgs, BuildProfile, String, Vec<u8>) -> Result<()> + Send + Sync>,
-
     /// This hook will be run after the WASM is optimized.
-    pub post_build: Box<dyn Fn(&dyn BuildArgs, BuildProfile) -> Result<()> + Send + Sync>,
+    #[allow(clippy::type_complexity)]
+    pub post_build:
+        Box<dyn Fn(&dyn BuildArgs, BuildProfile, String, Vec<u8>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before running the HTTP server.
     #[cfg(feature = "serve")]
@@ -255,7 +252,7 @@ impl Default for Hooks {
 
                 Ok(())
             }),
-            prepare_build: Box::new(|args, _, wasm_js, wasm_bin| {
+            post_build: Box::new(|args, _, wasm_js, wasm_bin| {
                 let build_path = args.build_path();
                 let index_path = build_path.join("index.html");
 
@@ -273,7 +270,6 @@ impl Default for Hooks {
 
                 Ok(())
             }),
-            post_build: Box::new(|_, _| Ok(())),
             #[cfg(feature = "serve")]
             serve: Box::new(|args, app| {
                 use tide::{Body, Response};
@@ -380,9 +376,7 @@ fn build(
         BuildProfile::Dev => wasm_bin,
     };
 
-    (hooks.prepare_build)(args, profile, wasm_js, wasm_bin)?;
-
-    (hooks.post_build)(args, profile)?;
+    (hooks.post_build)(args, profile, wasm_js, wasm_bin)?;
 
     Ok(())
 }
@@ -401,7 +395,11 @@ fn serve(
 
     (hooks.serve)(args, &mut app)?;
 
-    eprintln!("Development server started: http://{}:{}", args.ip(), args.port());
+    eprintln!(
+        "Development server started: http://{}:{}",
+        args.ip(),
+        args.port()
+    );
 
     Ok(Box::pin(
         app.listen(format!("{}:{}", args.ip(), args.port()))

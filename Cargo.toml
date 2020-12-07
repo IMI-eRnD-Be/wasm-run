@@ -1,6 +1,6 @@
 [package]
 name = "wasm-run"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -29,7 +29,7 @@ notify = "4.0.12"
 structopt = "0.3"
 tide = { version = "0.15", optional = true }
 wasm-bindgen-cli-support = "0.2.68"
-wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.2.1" }
+wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.3.0" }
 
 [workspace]
 members = [

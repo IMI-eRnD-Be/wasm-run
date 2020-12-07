@@ -18,8 +18,6 @@ use syn::{parse_macro_input, ItemEnum};
 /// There are a number of argument you can provide to the macro:
 ///  -  `other_cli_commands`: a function that is called if you have added new commands to the
 ///     `enum`;
-///  -  `prepare_build`: a function that is called when the build directory is being prepared (the
-///     WASM is not yet optimized with `wasm-opt`);
 ///  -  `post_build`: a function that is called when the build is finished (after the optimization
 ///     with `wasm-opt`);
 ///  -  `watch`: a function that is called when the watcher is being initialized (allowing you to

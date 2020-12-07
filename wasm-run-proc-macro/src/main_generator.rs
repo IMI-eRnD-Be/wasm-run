@@ -17,7 +17,6 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         other_cli_commands,
         #[cfg(not(feature = "serve"))]
         run_server,
-        prepare_build,
         post_build,
         #[cfg(feature = "serve")]
         serve,
@@ -100,23 +99,14 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
             }
         });
 
-    let prepare_build = prepare_build.map(|path| {
+    let post_build = post_build.map(|path| {
         quote_spanned! {path.span()=>
-            prepare_build: Box::new(|args, profile, wasm_js, wasm_bin| {
+            post_build: Box::new(|args, profile, wasm_js, wasm_bin| {
                 let args = args.downcast_ref::<#build_ty>()
                     .expect("invalid type for `Build` command: the type in the command enum \
                         must be the same than the type returned by `build_args()` \
                         on the implementation of the trait `BuildArgs`");
                 #path(args, profile, wasm_js, wasm_bin)
-            }),
-        }
-    });
-
-    let post_build = post_build.map(|path| {
-        quote_spanned! {path.span()=>
-            post_build: Box::new(|args, profile| {
-                let args = args.downcast_ref::<#build_ty>().unwrap();
-                #path(args, profile)
             }),
         }
     });
@@ -170,7 +160,6 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
             let cli = #ident::from_args();
             #[allow(clippy::needless_update)]
             let hooks = ::wasm_run::Hooks {
-                #prepare_build
                 #post_build
                 #serve
                 #watch
