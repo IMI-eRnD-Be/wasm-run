@@ -21,6 +21,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
+            ~/.rustup
+            ~/.cargo/registry
+            ~/.cargo/bin
             target
             examples/backend-and-frontend/target
           key: main
