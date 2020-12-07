@@ -21,9 +21,18 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
+            ~/.rustup
+            ~/.cargo/registry
+            ~/.cargo/bin
             target
             examples/backend-and-frontend/target
           key: main
+
+      - name: Install target wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
 
       - name: cargo test
         uses: actions-rs/cargo@v1
