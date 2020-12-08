@@ -284,6 +284,10 @@ impl ServeArgs for DefaultServeArgs {
 /// Hooks.
 pub struct Hooks {
     /// This hook will be run after the WASM is optimized.
+    pub pre_build:
+        Box<dyn Fn(&dyn BuildArgs, BuildProfile, &mut Command) -> Result<()> + Send + Sync>,
+
+    /// This hook will be run after the WASM is optimized.
     #[allow(clippy::type_complexity)]
     pub post_build:
         Box<dyn Fn(&dyn BuildArgs, BuildProfile, String, Vec<u8>) -> Result<()> + Send + Sync>,
@@ -321,6 +325,7 @@ impl Default for Hooks {
 
                 Ok(())
             }),
+            pre_build: Box::new(|_, _, _| Ok(())),
             post_build: Box::new(|args, _, wasm_js, wasm_bin| {
                 let build_path = args.build_path();
                 let index_path = build_path.join("index.html");
@@ -366,7 +371,9 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
 
     let package = args.package();
 
-    let status = Command::new("cargo")
+    let mut command = Command::new("cargo");
+
+    command
         .args(&[
             "build",
             "--lib",
@@ -379,9 +386,11 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Profiling => &["--release"] as &[&str],
             BuildProfile::Release => &["--release"],
             BuildProfile::Dev => &[],
-        })
-        .status()
-        .context("could not start build process")?;
+        });
+
+    (hooks.pre_build)(args, profile, &mut command)?;
+
+    let status = command.status().context("could not start build process")?;
 
     if !status.success() {
         if let Some(code) = status.code() {
