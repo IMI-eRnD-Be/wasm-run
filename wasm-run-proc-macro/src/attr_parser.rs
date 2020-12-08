@@ -9,14 +9,15 @@ pub struct Attr {
     #[cfg(feature = "serve")]
     pub serve: Option<Path>,
     pub watch: Option<Path>,
-    pub crate_name: Option<LitStr>,
+    pub pkg_name: Option<LitStr>,
+    pub default_build_path: Option<Path>,
 }
 
 impl Attr {
     pub fn parse(input: ParseStream) -> Result<Self> {
-        let crate_name = input.parse().ok();
+        let pkg_name = input.parse().ok();
 
-        if crate_name.is_some() && !input.is_empty() {
+        if pkg_name.is_some() && !input.is_empty() {
             input.parse::<Token![,]>()?;
         }
 
@@ -27,6 +28,7 @@ impl Attr {
         #[cfg(feature = "serve")]
         let mut serve = None;
         let mut watch = None;
+        let mut default_build_path = None;
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -41,6 +43,7 @@ impl Attr {
                 #[cfg(not(feature = "serve"))]
                 "run_server" => run_server = Some(path),
                 "watch" => watch = Some(path),
+                "default_build_path" => default_build_path = Some(path),
                 _ => return Err(Error::new(ident.span(), "invalid argument")),
             }
 
@@ -59,7 +62,8 @@ impl Attr {
             #[cfg(feature = "serve")]
             serve,
             watch,
-            crate_name,
+            pkg_name,
+            default_build_path,
         })
     }
 }

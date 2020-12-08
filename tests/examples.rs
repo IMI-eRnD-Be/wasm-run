@@ -1,5 +1,9 @@
-fn build_crate(path: &std::path::Path) {
-    let output = std::process::Command::new("cargo")
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+
+fn build_crate(path: &Path) {
+    let output = Command::new("cargo")
         // NOTE: this variable forces cargo to use the same toolchain but for the Rocket example
         //       we need nightly.
         .env_remove("RUSTUP_TOOLCHAIN")
@@ -15,8 +19,8 @@ fn build_crate(path: &std::path::Path) {
     assert!(output.status.success());
 }
 
-fn run_crate(path: &std::path::Path, args: &[&str]) {
-    let output = std::process::Command::new("cargo")
+fn run_crate(path: &Path, args: &[&str]) {
+    let output = Command::new("cargo")
         .args(&["run", "--manifest-path"])
         .arg(path.join("Cargo.toml"))
         .arg("--")
@@ -36,5 +40,17 @@ fn examples() {
     let examples = std::path::PathBuf::from("examples");
     build_crate(&examples.join("basic"));
     build_crate(&examples.join("backend-and-frontend"));
+
+    let build_path = Path::new("build");
+    let _ = fs::remove_dir_all(build_path);
     run_crate(&examples.join("test-crate-name-vs-pkg-name"), &["build"]);
+    assert!(
+        build_path.exists(),
+        "test for `crate-name-vs-pkg-name` failed"
+    );
+
+    let build_path = examples.join("test-default-build-path").join("public");
+    let _ = fs::remove_dir_all(&build_path);
+    run_crate(&examples.join("test-default-build-path"), &["build"]);
+    assert!(build_path.exists(), "test for `default_build_path` failed");
 }

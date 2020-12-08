@@ -21,7 +21,8 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         #[cfg(feature = "serve")]
         serve,
         watch,
-        crate_name,
+        pkg_name,
+        default_build_path,
     } = attr;
 
     let (build_variant, build_ty) =
@@ -132,9 +133,9 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         }
     });
 
-    let crate_name = crate_name.map(|x| quote! { #x }).unwrap_or_else(|| {
-        let crate_name = std::env::var("CARGO_PKG_NAME").unwrap();
-        quote! { #crate_name }
+    let pkg_name = pkg_name.map(|x| quote! { #x }).unwrap_or_else(|| {
+        let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
+        quote! { #pkg_name }
     });
 
     #[cfg(feature = "serve")]
@@ -142,6 +143,16 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
     #[cfg(not(feature = "serve"))]
     let run_server_arm = quote! {
         #ident::RunServer(args) => #run_server(args)?,
+    };
+
+    let default_build_path = if let Some(path) = default_build_path {
+        quote_spanned! {path.span()=>
+            Some(Box::new(|metadata, package| {
+                #path(metadata, package)
+            }))
+        }
+    } else {
+        quote! { None }
     };
 
     Ok(quote! {
@@ -154,6 +165,7 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         }
 
         fn main() -> ::wasm_run::anyhow::Result<()> {
+            use ::std::path::PathBuf;
             use ::wasm_run::structopt::StructOpt;
             use ::wasm_run::*;
 
@@ -163,15 +175,17 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
                 #post_build
                 #serve
                 #watch
-                .. ::wasm_run::Hooks::default()
+                .. Hooks::default()
             };
 
-            let crate_name = #crate_name;
-            let crate_name = #crate_name.to_string();
+            let pkg_name = #pkg_name;
+            let pkg_name = #pkg_name.to_string();
+            let default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>> =
+                #default_build_path;
 
             match cli {
-                #ident::Build(args) => args.run(crate_name, hooks)?,
-                #ident::Serve(args) => args.run(crate_name, hooks)?,
+                #ident::Build(args) => args.run(pkg_name, hooks, default_build_path)?,
+                #ident::Serve(args) => args.run(pkg_name, hooks, default_build_path)?,
                 #run_server_arm
                 #other_cli_commands
             }

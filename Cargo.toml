@@ -36,5 +36,6 @@ wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.3.0" }
 members = [
 	"examples/basic",
 	"examples/test-crate-name-vs-pkg-name",
+	"examples/test-default-build-path",
 	"wasm-run-proc-macro",
 ]

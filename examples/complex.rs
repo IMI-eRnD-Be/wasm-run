@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use structopt::StructOpt;
 use wasm_run::anyhow::Result;
 use wasm_run::*;
@@ -7,6 +8,7 @@ use wasm_run::*;
     post_build = post_build,
     serve = serve,
     watch = watch,
+    default_build_path = default_build_path,
 )]
 #[derive(StructOpt, Debug)]
 enum Cli {
@@ -36,7 +38,7 @@ struct ServeCommand {
 }
 
 impl BuildArgs for BuildCommand {
-    fn build_path(&self) -> &std::path::PathBuf {
+    fn build_path(&self) -> &PathBuf {
         todo!()
     }
 
@@ -81,4 +83,8 @@ fn serve(args: &ServeCommand, _app: &mut tide::Server<()>) -> Result<()> {
 fn watch(args: &ServeCommand, _app: &mut notify::RecommendedWatcher) -> Result<()> {
     let _j = args.j;
     Ok(())
+}
+
+fn default_build_path(_metadata: &Metadata, _package: &Package) -> PathBuf {
+    todo!()
 }

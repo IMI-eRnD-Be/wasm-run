@@ -47,7 +47,7 @@
 #![warn(missing_docs)]
 
 use anyhow::{bail, Context, Result};
-use cargo_metadata::{Metadata, MetadataCommand};
+use cargo_metadata::MetadataCommand;
 use downcast_rs::*;
 use once_cell::sync::{Lazy, OnceCell};
 use std::fs;
@@ -62,6 +62,8 @@ pub use wasm_run_proc_macro::*;
 pub use anyhow;
 #[cfg(feature = "serve")]
 pub use async_std;
+pub use cargo_metadata;
+pub use cargo_metadata::{Metadata, Package};
 #[cfg(feature = "serve")]
 pub use futures;
 pub use notify;
@@ -71,6 +73,9 @@ pub use structopt;
 pub use tide;
 
 const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
+
+static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
+static PKG_NAME: OnceCell<String> = OnceCell::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// A build profile for the WASM.
@@ -102,8 +107,6 @@ pub trait BuildArgs: Downcast {
 
     /// Default path for the build/public directory.
     fn default_build_path(&self) -> &PathBuf {
-        static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
-
         DEFAULT_BUILD_PATH.get_or_init(|| {
             self.metadata()
                 .expect("metadata has been initialized on startup; qed")
@@ -121,25 +124,50 @@ pub trait BuildArgs: Downcast {
     }
 
     /// Metadata of the project.
-    fn metadata(&self) -> Result<&Metadata, &cargo_metadata::Error> {
+    fn metadata(&self) -> Result<&Metadata> {
         static CRATE_METADATA: Lazy<Result<Metadata, cargo_metadata::Error>> =
             Lazy::new(|| MetadataCommand::new().exec());
 
-        (*CRATE_METADATA).as_ref()
+        (*CRATE_METADATA)
+            .as_ref()
+            .map_err(|err| anyhow::anyhow!("could not get cargo metadata: {}", err))
+    }
+
+    /// Package metadata.
+    fn package(&self) -> Result<&Package> {
+        let pkg_name = PKG_NAME
+            .get()
+            .expect("PKG_NAME has been set on startup; qed");
+
+        self.metadata()?
+            .packages
+            .iter()
+            .find(|x| x.name == *pkg_name)
+            .ok_or_else(|| anyhow::anyhow!("could not find package {} in the workspace", pkg_name))
     }
 
     /// Create a profiling build. Enable optimizations and debug info.
     fn profiling(&self) -> bool;
 
     /// Run the `build` command.
-    fn run(self, crate_name: String, hooks: Hooks) -> Result<()>
+    fn run(
+        self,
+        pkg_name: String,
+        hooks: Hooks,
+        default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
+    ) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        if let Err(err) = self.metadata() {
-            bail!("Could not get cargo metadata: {}", err);
+        PKG_NAME
+            .set(pkg_name)
+            .expect("the cell is initially empty; qed");
+        if let Some(default_build_path) = default_build_path {
+            DEFAULT_BUILD_PATH
+                .set(default_build_path(self.metadata()?, self.package()?))
+                .expect("the cell is initially empty; qed");
         }
-        build(BuildProfile::Release, &self, &crate_name, &hooks)
+        build(BuildProfile::Release, &self, &hooks)
     }
 }
 
@@ -199,23 +227,42 @@ pub trait ServeArgs: Downcast + Send {
     fn build_args(&self) -> &dyn BuildArgs;
 
     /// Run the `serve` command.
-    fn run(self, crate_name: String, hooks: Hooks) -> Result<()>
+    fn run(
+        self,
+        pkg_name: String,
+        hooks: Hooks,
+        default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
+    ) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        build(BuildProfile::Dev, self.build_args(), &crate_name, &hooks)?;
+        let build_args = self.build_args();
+        PKG_NAME
+            .set(pkg_name)
+            .expect("the cell is initially empty; qed");
+        if let Some(default_build_path) = default_build_path {
+            DEFAULT_BUILD_PATH
+                .set(default_build_path(
+                    build_args.metadata()?,
+                    build_args.package()?,
+                ))
+                .expect("the cell is initially empty; qed");
+        }
+        // NOTE: the first step for serving is to call `build` a first time. The build directory
+        //       must be present before we start watching files there.
+        build(BuildProfile::Dev, self.build_args(), &hooks)?;
         #[cfg(feature = "serve")]
         {
             async_std::task::block_on(async {
                 let t1 = async_std::task::spawn(serve(&self, &hooks)?);
-                let t2 = async_std::task::spawn_blocking(move || watch(&self, &crate_name, &hooks));
+                let t2 = async_std::task::spawn_blocking(move || watch(&self, &hooks));
                 futures::try_join!(t1, t2)?;
                 Ok(())
             })
         }
         #[cfg(not(feature = "serve"))]
         {
-            watch(&self, &crate_name, &hooks)
+            watch(&self, &hooks)
         }
     }
 }
@@ -322,31 +369,14 @@ impl Default for Hooks {
     }
 }
 
-fn build(
-    mut profile: BuildProfile,
-    args: &dyn BuildArgs,
-    crate_name: &str,
-    hooks: &Hooks,
-) -> Result<()> {
+fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
     if args.profiling() {
         profile = BuildProfile::Profiling;
     }
 
-    let metadata = MetadataCommand::new()
-        .exec()
-        .context("could not get cargo metadata")?;
-
-    let cargo_toml = if let Some(package) = metadata.packages.iter().find(|x| x.name == crate_name)
-    {
-        &package.manifest_path
-    } else {
-        bail!(
-            "could not find crate named `{}` in the workspace",
-            crate_name
-        );
-    };
+    let package = args.package()?;
 
     let status = Command::new("cargo")
         .args(&[
@@ -356,7 +386,7 @@ fn build(
             "wasm32-unknown-unknown",
             "--manifest-path",
         ])
-        .arg(cargo_toml)
+        .arg(&package.manifest_path)
         .args(match profile {
             BuildProfile::Profiling => &["--release"] as &[&str],
             BuildProfile::Release => &["--release"],
@@ -382,7 +412,8 @@ fn build(
         )
     })?;
 
-    let wasm_path = metadata
+    let wasm_path = args
+        .metadata()?
         .target_directory
         .join("wasm32-unknown-unknown")
         .join(match profile {
@@ -390,7 +421,7 @@ fn build(
             BuildProfile::Release => "release",
             BuildProfile::Dev => "debug",
         })
-        .join(crate_name.replace("-", "_"))
+        .join(package.name.replace("-", "_"))
         .with_extension("wasm");
 
     let mut output = Bindgen::new()
@@ -441,7 +472,7 @@ fn serve(
     ))
 }
 
-fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
+fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     use notify::{DebouncedEvent, RecommendedWatcher, Watcher};
     use std::sync::mpsc::channel;
     use std::time::Duration;
@@ -495,7 +526,6 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
                 {
                     use std::os::unix::process::CommandExt;
 
-                    drop(crate_name);
                     drop(build_args);
                     drop(process_guard.take());
 
@@ -507,7 +537,7 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
                 }
                 #[cfg(not(all(feature = "full-restart", unix, not(serve))))]
                 {
-                    if let Err(err) = build(BuildProfile::Dev, build_args, &crate_name, hooks) {
+                    if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
                         eprintln!("{}", err);
                     }
                     #[cfg(not(feature = "serve"))]
