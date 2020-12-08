@@ -145,7 +145,7 @@ pub trait BuildArgs: Downcast {
         self.metadata()?
             .packages
             .iter()
-            .find(|x| x.name == *pkg_name)
+            .find(|x| &x.name == pkg_name)
             .ok_or_else(|| anyhow::anyhow!("could not find package {} in the workspace", pkg_name))
     }
 
