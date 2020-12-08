@@ -3,6 +3,7 @@
 mod attr_parser;
 mod main_generator;
 
+use cargo_metadata::MetadataCommand;
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, ItemEnum};
 
@@ -33,6 +34,11 @@ use syn::{parse_macro_input, ItemEnum};
 pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemEnum);
     let attr = parse_macro_input!(attr with attr_parser::Attr::parse);
+    let metadata = MetadataCommand::new()
+        .exec()
+        .expect("could not get metadata");
 
-    main_generator::generate(item, attr).unwrap().into()
+    main_generator::generate(item, attr, &metadata)
+        .unwrap()
+        .into()
 }

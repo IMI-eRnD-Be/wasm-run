@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use structopt::StructOpt;
-use wasm_run::*;
+use wasm_run::prelude::*;
 
 #[wasm_run::main(default_build_path = foo)]
 #[derive(StructOpt, Debug)]

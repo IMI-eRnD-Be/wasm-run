@@ -48,37 +48,29 @@
 
 use anyhow::{bail, Context, Result};
 use cargo_metadata::MetadataCommand;
+use cargo_metadata::{Metadata, Package};
 use downcast_rs::*;
-use once_cell::sync::{Lazy, OnceCell};
+use notify::RecommendedWatcher;
+use once_cell::sync::OnceCell;
 use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
 use std::pin::Pin;
 use std::process::Command;
 use structopt::StructOpt;
+#[cfg(feature = "serve")]
+use tide::Server;
 
 pub use wasm_run_proc_macro::*;
 
-pub use anyhow;
-#[cfg(feature = "serve")]
-pub use async_std;
-pub use cargo_metadata;
-pub use cargo_metadata::{Metadata, Package};
-#[cfg(feature = "serve")]
-pub use futures;
-pub use notify;
-pub use notify::RecommendedWatcher;
 #[doc(hidden)]
 pub use structopt;
-#[cfg(feature = "serve")]
-pub use tide;
-#[cfg(feature = "serve")]
-pub use tide::Server;
 
 const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
 
+static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
-static PKG_NAME: OnceCell<String> = OnceCell::new();
+static PACKAGE: OnceCell<&Package> = OnceCell::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// A build profile for the WASM.
@@ -89,6 +81,32 @@ pub enum BuildProfile {
     Release,
     /// Release profile (`--profile`, `-O2 --debuginfo`).
     Profiling,
+}
+
+/// This function is called early before any command starts. This is not part of the public API.
+#[doc(hidden)]
+pub fn wasm_run_init(pkg_name: &str) -> Result<(&Metadata, &Package)> {
+    let metadata = MetadataCommand::new()
+        .exec()
+        .context("could not load metadata")?;
+
+    METADATA
+        .set(metadata)
+        .expect("the cell is initially empty; qed");
+
+    let package = METADATA
+        .get()
+        .unwrap()
+        .packages
+        .iter()
+        .find(|x| x.name == pkg_name)
+        .expect("the package existence has been checked during compile time; qed");
+
+    PACKAGE
+        .set(package)
+        .expect("the cell is initially empty; qed");
+
+    Ok((METADATA.get().unwrap(), PACKAGE.get().unwrap()))
 }
 
 /// Build arguments.
@@ -110,43 +128,26 @@ pub trait BuildArgs: Downcast {
 
     /// Default path for the build/public directory.
     fn default_build_path(&self) -> &PathBuf {
-        DEFAULT_BUILD_PATH.get_or_init(|| {
-            self.metadata()
-                .expect("metadata has been initialized on startup; qed")
-                .workspace_root
-                .join("build")
-        })
+        DEFAULT_BUILD_PATH.get_or_init(|| self.metadata().workspace_root.join("build"))
     }
 
     /// Path to the `target` directory.
     fn target_path(&self) -> &PathBuf {
-        &self
-            .metadata()
-            .expect("metadata has been initialized on startup; qed")
-            .target_directory
+        &self.metadata().target_directory
     }
 
     /// Metadata of the project.
-    fn metadata(&self) -> Result<&Metadata> {
-        static CRATE_METADATA: Lazy<Result<Metadata, cargo_metadata::Error>> =
-            Lazy::new(|| MetadataCommand::new().exec());
-
-        (*CRATE_METADATA)
-            .as_ref()
-            .map_err(|err| anyhow::anyhow!("could not get cargo metadata: {}", err))
+    fn metadata(&self) -> &Metadata {
+        METADATA
+            .get()
+            .expect("metadata has been initialized on startup; qed")
     }
 
     /// Package metadata.
-    fn package(&self) -> Result<&Package> {
-        let pkg_name = PKG_NAME
+    fn package(&self) -> &Package {
+        PACKAGE
             .get()
-            .expect("PKG_NAME has been set on startup; qed");
-
-        self.metadata()?
-            .packages
-            .iter()
-            .find(|x| &x.name == pkg_name)
-            .ok_or_else(|| anyhow::anyhow!("could not find package {} in the workspace", pkg_name))
+            .expect("package has been initialized on startup; qed")
     }
 
     /// Create a profiling build. Enable optimizations and debug info.
@@ -155,19 +156,15 @@ pub trait BuildArgs: Downcast {
     /// Run the `build` command.
     fn run(
         self,
-        pkg_name: String,
         hooks: Hooks,
         default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
     ) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        PKG_NAME
-            .set(pkg_name)
-            .expect("the cell is initially empty; qed");
         if let Some(default_build_path) = default_build_path {
             DEFAULT_BUILD_PATH
-                .set(default_build_path(self.metadata()?, self.package()?))
+                .set(default_build_path(self.metadata(), self.package()))
                 .expect("the cell is initially empty; qed");
         }
         build(BuildProfile::Release, &self, &hooks)
@@ -232,7 +229,6 @@ pub trait ServeArgs: Downcast + Send {
     /// Run the `serve` command.
     fn run(
         self,
-        pkg_name: String,
         hooks: Hooks,
         default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
     ) -> Result<()>
@@ -240,14 +236,11 @@ pub trait ServeArgs: Downcast + Send {
         Self: Sized + 'static,
     {
         let build_args = self.build_args();
-        PKG_NAME
-            .set(pkg_name)
-            .expect("the cell is initially empty; qed");
         if let Some(default_build_path) = default_build_path {
             DEFAULT_BUILD_PATH
                 .set(default_build_path(
-                    build_args.metadata()?,
-                    build_args.package()?,
+                    build_args.metadata(),
+                    build_args.package(),
                 ))
                 .expect("the cell is initially empty; qed");
         }
@@ -378,7 +371,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         profile = BuildProfile::Profiling;
     }
 
-    let package = args.package()?;
+    let package = args.package();
 
     let status = Command::new("cargo")
         .args(&[
@@ -415,7 +408,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     })?;
 
     let wasm_path = args
-        .metadata()?
+        .metadata()
         .target_directory
         .join("wasm32-unknown-unknown")
         .join(match profile {
@@ -572,4 +565,34 @@ fn wasm_opt(
         }
         Err(()) => bail!("could not load WASM module"),
     }
+}
+
+/// The wasm-run Prelude
+///
+/// The purpose of this module is to alleviate imports of many common types:
+///
+/// ```
+/// # #![allow(unused_imports)]
+/// use wasm_run::prelude::*;
+/// ```
+pub mod prelude {
+    pub use wasm_run_proc_macro::*;
+
+    pub use anyhow;
+    #[cfg(feature = "serve")]
+    pub use async_std;
+    pub use cargo_metadata;
+    pub use cargo_metadata::{Metadata, Package};
+    #[cfg(feature = "serve")]
+    pub use futures;
+    pub use notify;
+    pub use notify::RecommendedWatcher;
+    #[cfg(feature = "serve")]
+    pub use tide;
+    #[cfg(feature = "serve")]
+    pub use tide::Server;
+
+    pub use super::{
+        BuildArgs, BuildProfile, DefaultBuildArgs, DefaultServeArgs, Hooks, ServeArgs,
+    };
 }

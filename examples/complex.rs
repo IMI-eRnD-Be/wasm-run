@@ -1,7 +1,7 @@
+use anyhow::Result;
 use std::path::PathBuf;
 use structopt::StructOpt;
-use wasm_run::anyhow::Result;
-use wasm_run::*;
+use wasm_run::prelude::*;
 
 #[wasm_run::main(
     other_cli_commands = run_other_cli_commands,
@@ -17,7 +17,7 @@ enum Cli {
     Hello,
 }
 
-fn run_other_cli_commands(_: Cli) -> Result<()> {
+fn run_other_cli_commands(_: Cli, _metadata: &Metadata, _package: &Package) -> Result<()> {
     println!("Hello World!");
     Ok(())
 }
