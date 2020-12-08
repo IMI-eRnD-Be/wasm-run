@@ -37,4 +37,4 @@ jobs:
       - name: cargo test
         uses: actions-rs/cargo@v1
         with:
-          command: test
+          command: test --workspace
