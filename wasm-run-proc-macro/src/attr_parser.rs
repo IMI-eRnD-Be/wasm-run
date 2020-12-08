@@ -5,6 +5,7 @@ pub struct Attr {
     pub other_cli_commands: Option<Path>,
     #[cfg(not(feature = "serve"))]
     pub run_server: Option<Path>,
+    pub pre_build: Option<Path>,
     pub post_build: Option<Path>,
     #[cfg(feature = "serve")]
     pub serve: Option<Path>,
@@ -24,6 +25,7 @@ impl Attr {
         let mut other_cli_commands = None;
         #[cfg(not(feature = "serve"))]
         let mut run_server = None;
+        let mut pre_build = None;
         let mut post_build = None;
         #[cfg(feature = "serve")]
         let mut serve = None;
@@ -37,6 +39,7 @@ impl Attr {
 
             match ident.to_string().as_str() {
                 "other_cli_commands" => other_cli_commands = Some(path),
+                "pre_build" => pre_build = Some(path),
                 "post_build" => post_build = Some(path),
                 #[cfg(feature = "serve")]
                 "serve" => serve = Some(path),
@@ -58,6 +61,7 @@ impl Attr {
             other_cli_commands,
             #[cfg(not(feature = "serve"))]
             run_server,
+            pre_build,
             post_build,
             #[cfg(feature = "serve")]
             serve,

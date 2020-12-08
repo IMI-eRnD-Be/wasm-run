@@ -16,7 +16,11 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v2
 
-      - name: Cache target
+      - name: Get main commit hash
+        id: main_commit
+        run: echo "::set-output name=hash::$(git rev-parse origin/main)"
+
+      - name: Cache target, rustup and cargo registry
         id: cache-target
         uses: actions/cache@v2
         with:
@@ -26,7 +30,7 @@ jobs:
             ~/.cargo/bin
             target
             examples/backend-and-frontend/target
-          key: main
+          key: main-${{ steps.main_commit.outputs.hash }}
 
       - name: Install target wasm32-unknown-unknown
         uses: actions-rs/toolchain@v1

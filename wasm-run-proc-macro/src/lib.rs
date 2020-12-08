@@ -19,6 +19,8 @@ use syn::{parse_macro_input, ItemEnum};
 /// There are a number of named arguments you can provide to the macro:
 ///  -  `other_cli_commands`: a function that is called if you have added new commands to the
 ///     `enum`;
+///  -  `pre_build`: a function that is called when the build has not started yet (you can tweak
+///     the command-line arguments of the build command);
 ///  -  `post_build`: a function that is called when the build is finished (after the optimization
 ///     with `wasm-opt`);
 ///  -  `watch`: a function that is called when the watcher is being initialized (allowing you to
@@ -51,6 +53,7 @@ use syn::{parse_macro_input, ItemEnum};
 /// #[wasm_run::main(
 ///     "basic",
 ///     other_cli_commands = run_other_cli_commands,
+///     pre_build = pre_build,
 ///     post_build = post_build,
 ///     serve = serve,
 ///     watch = watch,
@@ -114,6 +117,21 @@ use syn::{parse_macro_input, ItemEnum};
 ///         Cli::Build(_) | Cli::Serve(_) => unreachable!(),
 ///         Cli::Hello => println!("Hello World!"),
 ///     }
+///
+///     Ok(())
+/// }
+///
+/// /// This function is called after the build.
+/// fn pre_build(
+///     args: &BuildCommand,
+///     profile: BuildProfile,
+///     command: &mut std::process::Command,
+/// ) -> Result<()> {
+///     let _i = args.i;
+///
+///     command
+///         .arg("--no-default-features")
+///         .env("RUSTFLAGS", "-Zmacro-backtrace");
 ///
 ///     Ok(())
 /// }
