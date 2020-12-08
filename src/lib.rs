@@ -85,7 +85,10 @@ pub enum BuildProfile {
 
 /// This function is called early before any command starts. This is not part of the public API.
 #[doc(hidden)]
-pub fn wasm_run_init(pkg_name: &str) -> Result<(&Metadata, &Package)> {
+pub fn wasm_run_init(
+    pkg_name: &str,
+    default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
+) -> Result<(&Metadata, &Package)> {
     let metadata = MetadataCommand::new()
         .exec()
         .context("could not load metadata")?;
@@ -93,6 +96,8 @@ pub fn wasm_run_init(pkg_name: &str) -> Result<(&Metadata, &Package)> {
     METADATA
         .set(metadata)
         .expect("the cell is initially empty; qed");
+
+    let metadata = METADATA.get().unwrap();
 
     let package = METADATA
         .get()
@@ -106,7 +111,17 @@ pub fn wasm_run_init(pkg_name: &str) -> Result<(&Metadata, &Package)> {
         .set(package)
         .expect("the cell is initially empty; qed");
 
-    Ok((METADATA.get().unwrap(), PACKAGE.get().unwrap()))
+    let package = PACKAGE.get().unwrap();
+
+    DEFAULT_BUILD_PATH
+        .set(if let Some(default_build_path) = default_build_path {
+            default_build_path(metadata, package)
+        } else {
+            metadata.workspace_root.join("build")
+        })
+        .expect("the cell is initially empty; qed");
+
+    Ok((metadata, package))
 }
 
 /// Build arguments.
@@ -128,7 +143,9 @@ pub trait BuildArgs: Downcast {
 
     /// Default path for the build/public directory.
     fn default_build_path(&self) -> &PathBuf {
-        DEFAULT_BUILD_PATH.get_or_init(|| self.metadata().workspace_root.join("build"))
+        DEFAULT_BUILD_PATH
+            .get()
+            .expect("default_build_path has been initialized on startup; qed")
     }
 
     /// Path to the `target` directory.
@@ -154,19 +171,10 @@ pub trait BuildArgs: Downcast {
     fn profiling(&self) -> bool;
 
     /// Run the `build` command.
-    fn run(
-        self,
-        hooks: Hooks,
-        default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
-    ) -> Result<()>
+    fn run(self, hooks: Hooks) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        if let Some(default_build_path) = default_build_path {
-            DEFAULT_BUILD_PATH
-                .set(default_build_path(self.metadata(), self.package()))
-                .expect("the cell is initially empty; qed");
-        }
         build(BuildProfile::Release, &self, &hooks)
     }
 }
@@ -227,23 +235,10 @@ pub trait ServeArgs: Downcast + Send {
     fn build_args(&self) -> &dyn BuildArgs;
 
     /// Run the `serve` command.
-    fn run(
-        self,
-        hooks: Hooks,
-        default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
-    ) -> Result<()>
+    fn run(self, hooks: Hooks) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        let build_args = self.build_args();
-        if let Some(default_build_path) = default_build_path {
-            DEFAULT_BUILD_PATH
-                .set(default_build_path(
-                    build_args.metadata(),
-                    build_args.package(),
-                ))
-                .expect("the cell is initially empty; qed");
-        }
         // NOTE: the first step for serving is to call `build` a first time. The build directory
         //       must be present before we start watching files there.
         build(BuildProfile::Dev, self.build_args(), &hooks)?;

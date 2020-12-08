@@ -190,7 +190,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
 
             let cli = #ident::from_args();
 
-            let (metadata, package) = ::wasm_run::wasm_run_init(#pkg_name)?;
+            let (metadata, package) = ::wasm_run::wasm_run_init(#pkg_name, #default_build_path)?;
 
             #[allow(clippy::needless_update)]
             let hooks = ::wasm_run::Hooks {
@@ -200,12 +200,9 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 .. Hooks::default()
             };
 
-            let default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>> =
-                #default_build_path;
-
             match cli {
-                #ident::Build(args) => args.run(hooks, default_build_path)?,
-                #ident::Serve(args) => args.run(hooks, default_build_path)?,
+                #ident::Build(args) => args.run(hooks)?,
+                #ident::Serve(args) => args.run(hooks)?,
                 #run_server_arm
                 #other_cli_commands
             }

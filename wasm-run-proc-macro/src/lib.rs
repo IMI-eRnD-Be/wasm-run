@@ -24,11 +24,12 @@ use syn::{parse_macro_input, ItemEnum};
 ///  -  `watch`: a function that is called when the watcher is being initialized (allowing you to
 ///     add extra things to watch for example);
 ///  -  `serve`: (only if built with the `serve` feature): a function that is called when the HTTP
-///     serve is getting configured.
+///     serve is getting configured;
 ///  -  `run_server`: (only if built *without* the `serve` feature): a function that is called to
-///     run the HTTP server.
+///     run the HTTP server;
 ///  -  `default_build_path`: a function that is called that provides the default directory path
-///     when the user didn't provide it through the command-line arguments.
+///     when the user didn't provide it through the command-line arguments (the default is
+///     `workspace root/build`).
 ///
 /// You can also change the crate that is built by providing its name in the first positional
 /// argument:
