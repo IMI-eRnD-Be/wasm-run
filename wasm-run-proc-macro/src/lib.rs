@@ -31,7 +31,7 @@ use syn::{parse_macro_input, ItemEnum};
 ///     when the user didn't provide it through the command-line arguments (the default is
 ///     `workspace root/build`).
 ///
-/// You can also change the crate that is built by providing its name in the first positional
+/// You can also change the package that is built by providing its name in the first positional
 /// argument:
 ///
 /// ```ignore
