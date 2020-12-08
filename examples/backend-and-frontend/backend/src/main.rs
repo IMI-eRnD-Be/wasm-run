@@ -1,7 +1,7 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
 use structopt::StructOpt;
-use wasm_run::*;
+use wasm_run::prelude::*;
 use rocket::response::NamedFile;
 use std::path::{PathBuf, Path};
 

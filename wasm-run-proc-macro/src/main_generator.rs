@@ -1,10 +1,11 @@
 use crate::attr_parser::Attr;
+use cargo_metadata::Metadata;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
 use syn::{Fields, ItemEnum};
 
-pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
+pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<TokenStream> {
     let ItemEnum {
         attrs,
         vis,
@@ -21,7 +22,8 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         #[cfg(feature = "serve")]
         serve,
         watch,
-        crate_name,
+        pkg_name,
+        default_build_path,
     } = attr;
 
     let (build_variant, build_ty) =
@@ -80,8 +82,9 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         RunServer(#serve_ty),
     };
 
+    let span = other_cli_commands.span();
     let other_cli_commands = other_cli_commands
-        .map(|x| quote! { cli => #x(cli)?, })
+        .map(|x| quote_spanned! {span=> cli => #x(cli, metadata, package)?, })
         .unwrap_or_else(|| {
             if variants
                 .iter()
@@ -132,9 +135,24 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         }
     });
 
-    let crate_name = crate_name.map(|x| quote! { #x }).unwrap_or_else(|| {
-        let crate_name = std::env::var("CARGO_PKG_NAME").unwrap();
-        quote! { #crate_name }
+    let mut check_package_existence = quote! {};
+    if let Some(pkg_name) = pkg_name.as_ref() {
+        let span = pkg_name.span();
+        let pkg_name = pkg_name.value();
+        if metadata
+            .packages
+            .iter()
+            .find(|x| x.name == pkg_name)
+            .is_none()
+        {
+            let message = format!("package `{}` not found", pkg_name);
+            check_package_existence = quote_spanned! {span=> compile_error!(#message); };
+        }
+    }
+
+    let pkg_name = pkg_name.map(|x| quote! { #x }).unwrap_or_else(|| {
+        let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
+        quote! { #pkg_name }
     });
 
     #[cfg(feature = "serve")]
@@ -144,7 +162,19 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
         #ident::RunServer(args) => #run_server(args)?,
     };
 
+    let default_build_path = if let Some(path) = default_build_path {
+        quote_spanned! {path.span()=>
+            Some(Box::new(|metadata, package| {
+                #path(metadata, package)
+            }))
+        }
+    } else {
+        quote! { None }
+    };
+
     Ok(quote! {
+        #check_package_existence
+
         #( #attrs )*
         #vis enum #ident #generics {
             #serve_variant
@@ -153,25 +183,26 @@ pub fn generate(item: ItemEnum, attr: Attr) -> syn::Result<TokenStream> {
             #variants
         }
 
-        fn main() -> ::wasm_run::anyhow::Result<()> {
+        fn main() -> ::wasm_run::prelude::anyhow::Result<()> {
+            use ::std::path::PathBuf;
             use ::wasm_run::structopt::StructOpt;
-            use ::wasm_run::*;
+            use ::wasm_run::prelude::*;
 
             let cli = #ident::from_args();
+
+            let (metadata, package) = ::wasm_run::wasm_run_init(#pkg_name, #default_build_path)?;
+
             #[allow(clippy::needless_update)]
             let hooks = ::wasm_run::Hooks {
                 #post_build
                 #serve
                 #watch
-                .. ::wasm_run::Hooks::default()
+                .. Hooks::default()
             };
 
-            let crate_name = #crate_name;
-            let crate_name = #crate_name.to_string();
-
             match cli {
-                #ident::Build(args) => args.run(crate_name, hooks)?,
-                #ident::Serve(args) => args.run(crate_name, hooks)?,
+                #ident::Build(args) => args.run(hooks)?,
+                #ident::Serve(args) => args.run(hooks)?,
                 #run_server_arm
                 #other_cli_commands
             }

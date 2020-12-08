@@ -1,6 +1,6 @@
 [package]
 name = "wasm-run-proc-macro"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -22,6 +22,11 @@ proc-macro = true
 serve = []
 
 [dependencies]
+cargo_metadata = "0.12.1"
 proc-macro2 = "1.0.24"
 quote = "1.0.7"
 syn = { version = "1.0.53", features = ["full"] }
+
+[dev-dependencies]
+wasm-run = { path = ".." }
+structopt = "0.3"

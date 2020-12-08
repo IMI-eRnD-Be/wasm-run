@@ -48,28 +48,29 @@
 
 use anyhow::{bail, Context, Result};
 use cargo_metadata::MetadataCommand;
+use cargo_metadata::{Metadata, Package};
 use downcast_rs::*;
+use notify::RecommendedWatcher;
+use once_cell::sync::OnceCell;
 use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
 use std::pin::Pin;
 use std::process::Command;
 use structopt::StructOpt;
+#[cfg(feature = "serve")]
+use tide::Server;
 
 pub use wasm_run_proc_macro::*;
 
-pub use anyhow;
-#[cfg(feature = "serve")]
-pub use async_std;
-#[cfg(feature = "serve")]
-pub use futures;
-pub use notify;
 #[doc(hidden)]
 pub use structopt;
-#[cfg(feature = "serve")]
-pub use tide;
 
 const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
+
+static METADATA: OnceCell<Metadata> = OnceCell::new();
+static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
+static PACKAGE: OnceCell<&Package> = OnceCell::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// A build profile for the WASM.
@@ -82,12 +83,53 @@ pub enum BuildProfile {
     Profiling,
 }
 
+/// This function is called early before any command starts. This is not part of the public API.
+#[doc(hidden)]
+pub fn wasm_run_init(
+    pkg_name: &str,
+    default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
+) -> Result<(&Metadata, &Package)> {
+    let metadata = MetadataCommand::new()
+        .exec()
+        .context("this binary is not meant to be ran outside of its workspace")?;
+
+    METADATA
+        .set(metadata)
+        .expect("the cell is initially empty; qed");
+
+    let metadata = METADATA.get().unwrap();
+
+    let package = METADATA
+        .get()
+        .unwrap()
+        .packages
+        .iter()
+        .find(|x| x.name == pkg_name)
+        .expect("the package existence has been checked during compile time; qed");
+
+    PACKAGE
+        .set(package)
+        .expect("the cell is initially empty; qed");
+
+    let package = PACKAGE.get().unwrap();
+
+    DEFAULT_BUILD_PATH
+        .set(if let Some(default_build_path) = default_build_path {
+            default_build_path(metadata, package)
+        } else {
+            metadata.workspace_root.join("build")
+        })
+        .expect("the cell is initially empty; qed");
+
+    Ok((metadata, package))
+}
+
 /// Build arguments.
 #[derive(StructOpt, Debug)]
 pub struct DefaultBuildArgs {
     /// Build directory output.
-    #[structopt(long, default_value = "build")]
-    pub build_path: PathBuf,
+    #[structopt(long)]
+    pub build_path: Option<PathBuf>,
 
     /// Create a profiling build. Enable optimizations and debug info.
     #[structopt(long)]
@@ -99,15 +141,41 @@ pub trait BuildArgs: Downcast {
     /// Build directory output.
     fn build_path(&self) -> &PathBuf;
 
+    /// Default path for the build/public directory.
+    fn default_build_path(&self) -> &PathBuf {
+        DEFAULT_BUILD_PATH
+            .get()
+            .expect("default_build_path has been initialized on startup; qed")
+    }
+
+    /// Path to the `target` directory.
+    fn target_path(&self) -> &PathBuf {
+        &self.metadata().target_directory
+    }
+
+    /// Metadata of the project.
+    fn metadata(&self) -> &Metadata {
+        METADATA
+            .get()
+            .expect("metadata has been initialized on startup; qed")
+    }
+
+    /// Package metadata.
+    fn package(&self) -> &Package {
+        PACKAGE
+            .get()
+            .expect("package has been initialized on startup; qed")
+    }
+
     /// Create a profiling build. Enable optimizations and debug info.
     fn profiling(&self) -> bool;
 
     /// Run the `build` command.
-    fn run(self, crate_name: String, hooks: Hooks) -> Result<()>
+    fn run(self, hooks: Hooks) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        build(BuildProfile::Release, &self, &crate_name, &hooks)
+        build(BuildProfile::Release, &self, &hooks)
     }
 }
 
@@ -115,7 +183,9 @@ impl_downcast!(BuildArgs);
 
 impl BuildArgs for DefaultBuildArgs {
     fn build_path(&self) -> &PathBuf {
-        &self.build_path
+        self.build_path
+            .as_ref()
+            .unwrap_or_else(|| self.default_build_path())
     }
 
     fn profiling(&self) -> bool {
@@ -165,23 +235,25 @@ pub trait ServeArgs: Downcast + Send {
     fn build_args(&self) -> &dyn BuildArgs;
 
     /// Run the `serve` command.
-    fn run(self, crate_name: String, hooks: Hooks) -> Result<()>
+    fn run(self, hooks: Hooks) -> Result<()>
     where
         Self: Sized + 'static,
     {
-        build(BuildProfile::Dev, self.build_args(), &crate_name, &hooks)?;
+        // NOTE: the first step for serving is to call `build` a first time. The build directory
+        //       must be present before we start watching files there.
+        build(BuildProfile::Dev, self.build_args(), &hooks)?;
         #[cfg(feature = "serve")]
         {
             async_std::task::block_on(async {
                 let t1 = async_std::task::spawn(serve(&self, &hooks)?);
-                let t2 = async_std::task::spawn_blocking(move || watch(&self, &crate_name, &hooks));
+                let t2 = async_std::task::spawn_blocking(move || watch(&self, &hooks));
                 futures::try_join!(t1, t2)?;
                 Ok(())
             })
         }
         #[cfg(not(feature = "serve"))]
         {
-            watch(&self, &crate_name, &hooks)
+            watch(&self, &hooks)
         }
     }
 }
@@ -219,28 +291,25 @@ pub struct Hooks {
     /// This hook will be run before running the HTTP server.
     #[cfg(feature = "serve")]
     #[allow(clippy::type_complexity)]
-    pub serve: Box<dyn Fn(&dyn ServeArgs, &mut tide::Server<()>) -> Result<()> + Send + Sync>,
+    pub serve: Box<dyn Fn(&dyn ServeArgs, &mut Server<()>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before starting to watch for changes in files.
-    pub watch:
-        Box<dyn Fn(&dyn ServeArgs, &mut notify::RecommendedWatcher) -> Result<()> + Send + Sync>,
+    pub watch: Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
 }
 
 impl Default for Hooks {
     fn default() -> Self {
         Self {
-            watch: Box::new(|_, watcher| {
+            watch: Box::new(|args, watcher| {
                 use notify::{RecursiveMode, Watcher};
                 use std::collections::HashSet;
                 use std::iter::FromIterator;
 
-                let metadata = MetadataCommand::new()
-                    .exec()
-                    .context("could not get cargo metadata")?;
+                let metadata = args.build_args().metadata();
 
                 let _ = watcher.watch("index.html", RecursiveMode::Recursive);
 
-                let members: HashSet<_> = HashSet::from_iter(metadata.workspace_members);
+                let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
                 for package in metadata.packages.iter().filter(|x| members.contains(&x.id)) {
                     let _ = watcher.watch(&package.manifest_path, RecursiveMode::Recursive);
@@ -271,13 +340,13 @@ impl Default for Hooks {
                 Ok(())
             }),
             #[cfg(feature = "serve")]
-            serve: Box::new(|args, app| {
+            serve: Box::new(|args, server| {
                 use tide::{Body, Response};
 
                 let index_path = args.build_args().build_path().join("index.html");
 
-                app.at("/").serve_dir(args.build_args().build_path())?;
-                app.at("/").get(move |_| {
+                server.at("/").serve_dir(args.build_args().build_path())?;
+                server.at("/").get(move |_| {
                     let index_path = index_path.clone();
                     async move { Ok(Response::from(Body::from_file(index_path).await?)) }
                 });
@@ -288,31 +357,14 @@ impl Default for Hooks {
     }
 }
 
-fn build(
-    mut profile: BuildProfile,
-    args: &dyn BuildArgs,
-    crate_name: &str,
-    hooks: &Hooks,
-) -> Result<()> {
+fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
     if args.profiling() {
         profile = BuildProfile::Profiling;
     }
 
-    let metadata = MetadataCommand::new()
-        .exec()
-        .context("could not get cargo metadata")?;
-
-    let cargo_toml = if let Some(package) = metadata.packages.iter().find(|x| x.name == crate_name)
-    {
-        &package.manifest_path
-    } else {
-        bail!(
-            "could not find crate named `{}` in the workspace",
-            crate_name
-        );
-    };
+    let package = args.package();
 
     let status = Command::new("cargo")
         .args(&[
@@ -322,7 +374,7 @@ fn build(
             "wasm32-unknown-unknown",
             "--manifest-path",
         ])
-        .arg(cargo_toml)
+        .arg(&package.manifest_path)
         .args(match profile {
             BuildProfile::Profiling => &["--release"] as &[&str],
             BuildProfile::Release => &["--release"],
@@ -348,7 +400,8 @@ fn build(
         )
     })?;
 
-    let wasm_path = metadata
+    let wasm_path = args
+        .metadata()
         .target_directory
         .join("wasm32-unknown-unknown")
         .join(match profile {
@@ -356,7 +409,7 @@ fn build(
             BuildProfile::Release => "release",
             BuildProfile::Dev => "debug",
         })
-        .join(crate_name.replace("-", "_"))
+        .join(package.name.replace("-", "_"))
         .with_extension("wasm");
 
     let mut output = Bindgen::new()
@@ -407,8 +460,8 @@ fn serve(
     ))
 }
 
-fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
-    use notify::{DebouncedEvent, RecommendedWatcher, Watcher};
+fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
+    use notify::{DebouncedEvent, Watcher};
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
@@ -461,7 +514,6 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
                 {
                     use std::os::unix::process::CommandExt;
 
-                    drop(crate_name);
                     drop(build_args);
                     drop(process_guard.take());
 
@@ -473,7 +525,7 @@ fn watch(args: &dyn ServeArgs, crate_name: &str, hooks: &Hooks) -> Result<()> {
                 }
                 #[cfg(not(all(feature = "full-restart", unix, not(serve))))]
                 {
-                    if let Err(err) = build(BuildProfile::Dev, build_args, &crate_name, hooks) {
+                    if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
                         eprintln!("{}", err);
                     }
                     #[cfg(not(feature = "serve"))]
@@ -506,4 +558,34 @@ fn wasm_opt(
         }
         Err(()) => bail!("could not load WASM module"),
     }
+}
+
+/// The wasm-run Prelude
+///
+/// The purpose of this module is to alleviate imports of many common types:
+///
+/// ```
+/// # #![allow(unused_imports)]
+/// use wasm_run::prelude::*;
+/// ```
+pub mod prelude {
+    pub use wasm_run_proc_macro::*;
+
+    pub use anyhow;
+    #[cfg(feature = "serve")]
+    pub use async_std;
+    pub use cargo_metadata;
+    pub use cargo_metadata::{Metadata, Package};
+    #[cfg(feature = "serve")]
+    pub use futures;
+    pub use notify;
+    pub use notify::RecommendedWatcher;
+    #[cfg(feature = "serve")]
+    pub use tide;
+    #[cfg(feature = "serve")]
+    pub use tide::Server;
+
+    pub use super::{
+        BuildArgs, BuildProfile, DefaultBuildArgs, DefaultServeArgs, Hooks, ServeArgs,
+    };
 }

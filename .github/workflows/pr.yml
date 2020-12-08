@@ -37,6 +37,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --workspace
 
       - name: rustfmt
         uses: actions-rs/cargo@v1

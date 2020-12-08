@@ -1,6 +1,6 @@
 [package]
 name = "wasm-run"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -26,14 +26,16 @@ cargo_metadata = "0.12.1"
 downcast-rs = "1.2.0"
 futures = { version = "0.3.8" } # TODO should be optional but it's breaking for some reason
 notify = "4.0.12"
+once_cell = "1.5.2"
 structopt = "0.3"
 tide = { version = "0.15", optional = true }
 wasm-bindgen-cli-support = "0.2.68"
-wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.3.0" }
+wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.4.0" }
 
 [workspace]
 members = [
 	"examples/basic",
-	"examples/test-crate-name-vs-pkg-name",
+	"tests/test-crate-name-vs-pkg-name",
+	"tests/test-default-build-path",
 	"wasm-run-proc-macro",
 ]
