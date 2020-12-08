@@ -19,7 +19,7 @@ fn build_crate(path: &Path) {
 }
 
 #[test]
-fn example_crates() {
+fn build_example_crates() {
     let examples = Path::new("examples");
     build_crate(&examples.join("basic"));
     build_crate(&examples.join("backend-and-frontend"));

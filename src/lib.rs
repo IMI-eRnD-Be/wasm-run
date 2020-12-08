@@ -67,10 +67,13 @@ pub use cargo_metadata::{Metadata, Package};
 #[cfg(feature = "serve")]
 pub use futures;
 pub use notify;
+pub use notify::RecommendedWatcher;
 #[doc(hidden)]
 pub use structopt;
 #[cfg(feature = "serve")]
 pub use tide;
+#[cfg(feature = "serve")]
+pub use tide::Server;
 
 const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
 
@@ -300,11 +303,10 @@ pub struct Hooks {
     /// This hook will be run before running the HTTP server.
     #[cfg(feature = "serve")]
     #[allow(clippy::type_complexity)]
-    pub serve: Box<dyn Fn(&dyn ServeArgs, &mut tide::Server<()>) -> Result<()> + Send + Sync>,
+    pub serve: Box<dyn Fn(&dyn ServeArgs, &mut Server<()>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before starting to watch for changes in files.
-    pub watch:
-        Box<dyn Fn(&dyn ServeArgs, &mut notify::RecommendedWatcher) -> Result<()> + Send + Sync>,
+    pub watch: Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
 }
 
 impl Default for Hooks {
@@ -473,7 +475,7 @@ fn serve(
 }
 
 fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
-    use notify::{DebouncedEvent, RecommendedWatcher, Watcher};
+    use notify::{DebouncedEvent, Watcher};
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
