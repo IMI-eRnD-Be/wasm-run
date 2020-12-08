@@ -305,18 +305,16 @@ pub struct Hooks {
 impl Default for Hooks {
     fn default() -> Self {
         Self {
-            watch: Box::new(|_, watcher| {
+            watch: Box::new(|args, watcher| {
                 use notify::{RecursiveMode, Watcher};
                 use std::collections::HashSet;
                 use std::iter::FromIterator;
 
-                let metadata = MetadataCommand::new()
-                    .exec()
-                    .context("could not get cargo metadata")?;
+                let metadata = args.build_args().metadata();
 
                 let _ = watcher.watch("index.html", RecursiveMode::Recursive);
 
-                let members: HashSet<_> = HashSet::from_iter(metadata.workspace_members);
+                let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
                 for package in metadata.packages.iter().filter(|x| members.contains(&x.id)) {
                     let _ = watcher.watch(&package.manifest_path, RecursiveMode::Recursive);
@@ -347,13 +345,13 @@ impl Default for Hooks {
                 Ok(())
             }),
             #[cfg(feature = "serve")]
-            serve: Box::new(|args, app| {
+            serve: Box::new(|args, server| {
                 use tide::{Body, Response};
 
                 let index_path = args.build_args().build_path().join("index.html");
 
-                app.at("/").serve_dir(args.build_args().build_path())?;
-                app.at("/").get(move |_| {
+                server.at("/").serve_dir(args.build_args().build_path())?;
+                server.at("/").get(move |_| {
                     let index_path = index_path.clone();
                     async move { Ok(Response::from(Body::from_file(index_path).await?)) }
                 });

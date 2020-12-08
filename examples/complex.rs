@@ -1,8 +1,10 @@
 use anyhow::Result;
+use std::fs;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use wasm_run::prelude::*;
 
+/// Makes an entrypoint to your binary.
 #[wasm_run::main(
     other_cli_commands = run_other_cli_commands,
     post_build = post_build,
@@ -17,17 +19,24 @@ enum Cli {
     Hello,
 }
 
-fn run_other_cli_commands(_: Cli, _metadata: &Metadata, _package: &Package) -> Result<()> {
-    println!("Hello World!");
-    Ok(())
-}
-
+/// Define a custom `build` command.
 #[derive(StructOpt, Debug)]
 struct BuildCommand {
     #[structopt(skip)]
     i: i32,
 }
 
+impl BuildArgs for BuildCommand {
+    fn build_path(&self) -> &PathBuf {
+        self.default_build_path()
+    }
+
+    fn profiling(&self) -> bool {
+        false
+    }
+}
+
+/// Define a custom `serve` command.
 #[derive(StructOpt, Debug)]
 struct ServeCommand {
     #[structopt(flatten)]
@@ -35,16 +44,6 @@ struct ServeCommand {
 
     #[structopt(skip)]
     j: i32,
-}
-
-impl BuildArgs for BuildCommand {
-    fn build_path(&self) -> &PathBuf {
-        todo!()
-    }
-
-    fn profiling(&self) -> bool {
-        todo!()
-    }
 }
 
 impl ServeArgs for ServeCommand {
@@ -65,26 +64,80 @@ impl ServeArgs for ServeCommand {
     }
 }
 
+/// This function is called if you have added new commands to the enum.
+fn run_other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> Result<()> {
+    match cli {
+        Cli::Build(_) | Cli::Serve(_) => unreachable!(),
+        Cli::Hello => println!("Hello World!"),
+    }
+
+    Ok(())
+}
+
+/// This function is called after the build.
 fn post_build(
     args: &BuildCommand,
     _profile: BuildProfile,
-    _wasm_js: String,
-    _wasm_bin: Vec<u8>,
+    wasm_js: String,
+    wasm_bin: Vec<u8>,
 ) -> Result<()> {
     let _i = args.i;
+
+    let build_path = args.build_path();
+    fs::write(build_path.join("app.js"), wasm_js)?;
+    fs::write(build_path.join("app_bg.wasm"), wasm_bin)?;
+    fs::write(
+        build_path.join("index.html"),
+        "<html><body>Custom index.html</body>",
+    )?;
+
     Ok(())
 }
 
-fn serve(args: &ServeCommand, _app: &mut tide::Server<()>) -> Result<()> {
+/// This function is called before serving files.
+fn serve(args: &ServeCommand, server: &mut Server<()>) -> Result<()> {
     let _j = args.j;
+
+    use tide::{Body, Response};
+
+    let build_path = args.build_args().build_path();
+    let index_path = build_path.join("index.html");
+
+    server.at("/").serve_dir(args.build_args().build_path())?;
+    server.at("/").get(move |_| {
+        let index_path = index_path.clone();
+        async move { Ok(Response::from(Body::from_file(index_path).await?)) }
+    });
+
     Ok(())
 }
 
-fn watch(args: &ServeCommand, _app: &mut notify::RecommendedWatcher) -> Result<()> {
+/// This function is called when the watcher is being initialized.
+fn watch(args: &ServeCommand, watcher: &mut RecommendedWatcher) -> Result<()> {
     let _j = args.j;
+
+    use notify::{RecursiveMode, Watcher};
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
+
+    let metadata = args.build_args().metadata();
+
+    let _ = watcher.watch("index.html", RecursiveMode::Recursive);
+
+    let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
+
+    for package in metadata.packages.iter().filter(|x| members.contains(&x.id)) {
+        let _ = watcher.watch(&package.manifest_path, RecursiveMode::Recursive);
+        let _ = watcher.watch(
+            package.manifest_path.parent().unwrap().join("src"),
+            RecursiveMode::Recursive,
+        );
+    }
+
     Ok(())
 }
 
-fn default_build_path(_metadata: &Metadata, _package: &Package) -> PathBuf {
-    todo!()
+/// Define another build path if not provided by the user in the command-line arguments.
+fn default_build_path(metadata: &Metadata, _package: &Package) -> PathBuf {
+    metadata.workspace_root.join("build")
 }
