@@ -91,7 +91,7 @@ pub fn wasm_run_init(
 ) -> Result<(&Metadata, &Package)> {
     let metadata = MetadataCommand::new()
         .exec()
-        .context("could not load metadata")?;
+        .context("this binary is not meant to be ran outside of its workspace")?;
 
     METADATA
         .set(metadata)
