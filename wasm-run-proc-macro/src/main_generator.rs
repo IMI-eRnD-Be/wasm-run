@@ -109,7 +109,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 let args = args.downcast_ref::<#build_ty>()
                     .expect("invalid type for `Build` command: the type in the command enum \
                         must be the same than the type returned by `build_args()` \
-                        on the implementation of the trait `BuildArgs`");
+                        in the implementation of the trait `ServeArgs`");
                 #path(args, profile, command)
             }),
         }
@@ -121,7 +121,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 let args = args.downcast_ref::<#build_ty>()
                     .expect("invalid type for `Build` command: the type in the command enum \
                         must be the same than the type returned by `build_args()` \
-                        on the implementation of the trait `BuildArgs`");
+                        in the implementation of the trait `ServeArgs`");
                 #path(args, profile, wasm_js, wasm_bin)
             }),
         }

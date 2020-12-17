@@ -283,7 +283,7 @@ impl ServeArgs for DefaultServeArgs {
 
 /// Hooks.
 pub struct Hooks {
-    /// This hook will be run after the WASM is optimized.
+    /// This hook will be run before the WASM is optimized.
     pub pre_build:
         Box<dyn Fn(&dyn BuildArgs, BuildProfile, &mut Command) -> Result<()> + Send + Sync>,
 
