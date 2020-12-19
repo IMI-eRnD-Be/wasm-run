@@ -59,7 +59,7 @@ use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
 use std::pin::Pin;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use structopt::StructOpt;
 #[cfg(feature = "serve")]
 use tide::Server;
@@ -585,7 +585,7 @@ fn wasm_opt(
         let mut command = Command::new(wasm_opt);
         command
             .stdin(file)
-            .stderr(Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
             .args(&["-o", "-", "-O"])
             .args(&["-ol", &optimization_level.to_string()])
             .args(&["-s", &shrink_level.to_string()]);
