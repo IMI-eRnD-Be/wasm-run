@@ -46,6 +46,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(feature = "prebuilt-wasm-opt")]
+mod prebuilt_wasm_opt;
+
 use anyhow::{bail, Context, Result};
 use cargo_metadata::MetadataCommand;
 use cargo_metadata::{Metadata, Package};
@@ -56,7 +59,7 @@ use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
 use std::pin::Pin;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use structopt::StructOpt;
 #[cfg(feature = "serve")]
 use tide::Server;
@@ -550,13 +553,15 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     }
 }
 
+#[allow(unused_variables, unreachable_code)]
 fn wasm_opt(
     binary: Vec<u8>,
     shrink_level: u32,
     optimization_level: u32,
     debug_info: bool,
 ) -> Result<Vec<u8>> {
-    match binaryen::Module::read(&binary) {
+    #[cfg(feature = "binaryen")]
+    return match binaryen::Module::read(&binary) {
         Ok(mut module) => {
             module.optimize(&binaryen::CodegenConfig {
                 shrink_level,
@@ -566,7 +571,36 @@ fn wasm_opt(
             Ok(module.write())
         }
         Err(()) => bail!("could not load WASM module"),
-    }
+    };
+
+    #[cfg(feature = "prebuilt-wasm-opt")]
+    return {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let mut binary = binary;
+        let mut file = tempfile::tempfile()?;
+        file.write(&mut binary)?;
+        file.seek(SeekFrom::Start(0))?;
+        let wasm_opt = prebuilt_wasm_opt::install_wasm_opt()?;
+        let mut command = Command::new(wasm_opt);
+        command
+            .stdin(file)
+            .stderr(Stdio::inherit())
+            .args(&["-o", "-", "-O"])
+            .args(&["-ol", &optimization_level.to_string()])
+            .args(&["-s", &shrink_level.to_string()]);
+        if debug_info {
+            command.arg("-g");
+        }
+        let output = command.output()?;
+        if !output.status.success() {
+            bail!("command `wasm-opt` failed.");
+        }
+        Ok(output.stdout)
+    };
+
+    eprintln!("WARNING: no optimization has been done on the WASM");
+    Ok(binary)
 }
 
 /// The wasm-run Prelude
