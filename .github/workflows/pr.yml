@@ -27,7 +27,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/bin
             target
-            examples/backend-and-frontend/target
+            **/target
           key: ${{ github.event.issue.number }}-${{ runner.os }}-pr
           restore-keys: main-${{ steps.main_commit.outputs.hash }}
 
