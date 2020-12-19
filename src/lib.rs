@@ -47,11 +47,11 @@
 #![warn(missing_docs)]
 
 use anyhow::{bail, Context, Result};
-use cargo_metadata::MetadataCommand;
-use cargo_metadata::{Metadata, Package};
+use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
+use semver::VersionReq;
 use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
@@ -369,7 +369,34 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         profile = BuildProfile::Profiling;
     }
 
+    let wasm_run_package = args
+        .metadata()
+        .packages
+        .iter()
+        .find(|x| x.name == "wasm-run")
+        .context("could not find wasm-run in the dependencies")?;
     let package = args.package();
+
+    fn get_wasm_bindgen_version(package: &Package) -> Result<&VersionReq> {
+        Ok(&package
+            .dependencies
+            .iter()
+            .find(|x| x.name.starts_with("wasm-bindgen"))
+            .context("could not find dependency wasm-bindgen")?
+            .req)
+    }
+
+    let our_version = get_wasm_bindgen_version(wasm_run_package)?;
+    let their_version = get_wasm_bindgen_version(package)?;
+
+    if their_version != our_version {
+        // TODO check if versionreq are compatible
+        bail!(
+            "incompatible version of wasm-bindgen detected: {} doesn't match {}",
+            their_version,
+            our_version,
+        );
+    }
 
     let mut command = Command::new("cargo");
 
