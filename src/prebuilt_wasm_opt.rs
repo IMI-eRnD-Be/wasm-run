@@ -14,9 +14,14 @@ pub(crate) fn install_wasm_opt() -> Result<PathBuf> {
         os = platforms::TARGET_OS,
     );
 
+    #[cfg(target_os = "macos")]
+    let binaries = &["wasm-opt", "libbinaryen.dylib"];
+    #[cfg(not(target_os = "macos"))]
+    let binaries = &["wasm-opt"];
+
     eprintln!("Downloading wasm-opt...");
     Ok(cache
-        .download(true, "wasm-opt", &["wasm-opt"], &url)
+        .download(true, "wasm-opt", binaries, &url)
         .map_err(|err| err.compat())
         .with_context(|| format!("could not download binaryen: {}", url))?
         .expect("install is permitted; qed")
