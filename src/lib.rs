@@ -580,6 +580,7 @@ fn wasm_opt(
         let mut binary = binary;
         let mut file = tempfile::tempfile()?;
         file.write(&mut binary)?;
+        file.flush()?;
         file.seek(SeekFrom::Start(0))?;
         let wasm_opt = prebuilt_wasm_opt::install_wasm_opt()?;
         let mut command = Command::new(wasm_opt);
