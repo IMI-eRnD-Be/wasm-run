@@ -590,7 +590,6 @@ fn wasm_opt(
         #[cfg(target_os = "macos")]
         {
             command.env("DYLD_LIBRARY_PATH", wasm_opt.parent().unwrap());
-            todo!("{}", wasm_opt.parent().unwrap().display());
         }
 
         #[cfg(windows)]
