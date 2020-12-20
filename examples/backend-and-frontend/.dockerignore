@@ -1,0 +1,6 @@
+# Ignore everything
+**
+
+# Allow files and directories
+!/target/x86_64-unknown-linux-musl/release/backend
+!/build/**

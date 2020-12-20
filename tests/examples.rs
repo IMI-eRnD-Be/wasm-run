@@ -1,13 +1,13 @@
 use std::path::Path;
 use std::process::Command;
 
-fn build_crate(path: &Path) {
+fn run_cargo(path: &Path, args: &[&str]) {
     let output = Command::new("cargo")
         // NOTE: this variable forces cargo to use the same toolchain but for the Rocket example
         //       we need nightly.
         .env_remove("RUSTUP_TOOLCHAIN")
         .current_dir(path)
-        .args(&["build"])
+        .args(args)
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -21,6 +21,10 @@ fn build_crate(path: &Path) {
 #[test]
 fn build_example_crates() {
     let examples = Path::new("examples");
-    build_crate(&examples.join("basic"));
-    build_crate(&examples.join("backend-and-frontend"));
+    run_cargo(&examples.join("basic"), &["build"]);
+    run_cargo(&examples.join("backend-and-frontend"), &["build"]);
+    run_cargo(
+        &examples.join("backend-and-frontend"),
+        &["run", "-p", "frontend", "--", "build-container-image"],
+    );
 }
