@@ -171,8 +171,17 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     #[cfg(feature = "serve")]
     let run_server_arm = quote! {};
     #[cfg(not(feature = "serve"))]
-    let run_server_arm = quote! {
-        #ident::RunServer(args) => #run_server(args)?,
+    let run_server_arm = if let Some(run_server) = run_server {
+        quote_spanned! {run_server.span()=>
+            #ident::RunServer(args) => #run_server(args)?,
+        }
+    } else {
+        quote! {
+            _ => compile_error!(
+                "without the feature `serve` you need to provide a `run_server` argument to the \
+                macro. Example: #[main(run_server = my_awesome_function)]",
+            ),
+        }
     };
 
     let default_build_path = if let Some(path) = default_build_path {

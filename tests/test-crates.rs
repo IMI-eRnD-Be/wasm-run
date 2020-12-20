@@ -4,8 +4,8 @@ use std::process::Command;
 
 fn run_crate(path: &Path, args: &[&str]) {
     let output = Command::new("cargo")
-        .args(&["run", "--manifest-path"])
-        .arg(path.join("Cargo.toml"))
+        .current_dir(path)
+        .args(&["run"])
         .arg("--")
         .args(args)
         .output()
@@ -15,7 +15,12 @@ fn run_crate(path: &Path, args: &[&str]) {
 
     println!("stdout:\n{}\n", stdout);
     eprintln!("stderr:\n{}\n", stderr);
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "build failed: {} args: {:?}",
+        path.display(),
+        args
+    );
 }
 
 #[test]
@@ -36,4 +41,16 @@ fn run_test_crates() {
     let _ = fs::remove_dir_all(&build_path);
     run_crate(&crate_path, &["build"]);
     assert!(build_path.exists(), "test for `default_build_path` failed");
+
+    let crate_path = tests.join("test-prebuilt-wasm-opt");
+    let build_path = crate_path.join("build");
+    let _ = fs::remove_dir_all(&build_path);
+    run_crate(&crate_path, &["build"]);
+    assert!(build_path.exists(), "test for `prebuilt-wasm-opt` failed");
+
+    let crate_path = tests.join("test-no-serve");
+    let build_path = crate_path.join("build");
+    let _ = fs::remove_dir_all(&build_path);
+    run_crate(&crate_path, &["build"]);
+    assert!(build_path.exists(), "test for `no-serve` failed");
 }

@@ -27,7 +27,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/bin
             target
-            examples/backend-and-frontend/target
+            **/target
           key: ${{ github.event.issue.number }}-${{ runner.os }}-pr
           restore-keys: main-${{ steps.main_commit.outputs.hash }}
 
@@ -54,3 +54,41 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: -- -D warnings
+
+  build-windows:
+    needs: [cargo-test-and-lint]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Install target wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: cargo test (windows)
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace
+
+  build-osx-x86:
+    needs: [cargo-test-and-lint]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Install target wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: cargo test (OSX x86)
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace

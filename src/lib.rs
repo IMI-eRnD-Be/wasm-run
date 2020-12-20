@@ -46,6 +46,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(feature = "prebuilt-wasm-opt")]
+mod prebuilt_wasm_opt;
+
 use anyhow::{bail, Context, Result};
 use cargo_metadata::MetadataCommand;
 use cargo_metadata::{Metadata, Package};
@@ -550,13 +553,15 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     }
 }
 
+#[allow(unused_variables, unreachable_code)]
 fn wasm_opt(
     binary: Vec<u8>,
     shrink_level: u32,
     optimization_level: u32,
     debug_info: bool,
 ) -> Result<Vec<u8>> {
-    match binaryen::Module::read(&binary) {
+    #[cfg(feature = "binaryen")]
+    return match binaryen::Module::read(&binary) {
         Ok(mut module) => {
             module.optimize(&binaryen::CodegenConfig {
                 shrink_level,
@@ -566,7 +571,58 @@ fn wasm_opt(
             Ok(module.write())
         }
         Err(()) => bail!("could not load WASM module"),
-    }
+    };
+
+    #[cfg(feature = "prebuilt-wasm-opt")]
+    return {
+        let wasm_opt = prebuilt_wasm_opt::install_wasm_opt()?;
+
+        let mut command = Command::new(&wasm_opt);
+        command
+            .stderr(std::process::Stdio::inherit())
+            .args(&["-o", "-", "-O"])
+            .args(&["-ol", &optimization_level.to_string()])
+            .args(&["-s", &shrink_level.to_string()]);
+        if debug_info {
+            command.arg("-g");
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            command.env("DYLD_LIBRARY_PATH", wasm_opt.parent().unwrap());
+        }
+
+        #[cfg(windows)]
+        let delete_guard = {
+            use std::io::Write;
+
+            let mut binary = binary;
+            let tmp = tempfile::NamedTempFile::new()?;
+            tmp.as_file().write(&mut binary)?;
+            command.arg(tmp.path());
+            tmp
+        };
+
+        #[cfg(unix)]
+        {
+            use std::io::{Seek, SeekFrom, Write};
+
+            let mut binary = binary;
+            let mut file = tempfile::tempfile()?;
+            file.write(&mut binary)?;
+            file.seek(SeekFrom::Start(0))?;
+            command.stdin(file);
+        }
+
+        let output = command.output()?;
+        if !output.status.success() {
+            bail!("command `wasm-opt` failed.");
+        }
+        Ok(output.stdout)
+    };
+
+    eprintln!("WARNING: no optimization has been done on the WASM");
+    Ok(binary)
 }
 
 /// The wasm-run Prelude
