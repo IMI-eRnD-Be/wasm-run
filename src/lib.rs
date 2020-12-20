@@ -575,17 +575,10 @@ fn wasm_opt(
 
     #[cfg(feature = "prebuilt-wasm-opt")]
     return {
-        use std::io::{Seek, SeekFrom, Write};
-
-        let mut binary = binary;
-        let mut file = tempfile::tempfile()?;
-        file.write(&mut binary)?;
-        file.flush()?;
-        file.seek(SeekFrom::Start(0))?;
         let wasm_opt = prebuilt_wasm_opt::install_wasm_opt()?;
+
         let mut command = Command::new(wasm_opt);
         command
-            .stdin(file)
             .stderr(std::process::Stdio::inherit())
             .args(&["-o", "-", "-O"])
             .args(&["-ol", &optimization_level.to_string()])
@@ -593,6 +586,29 @@ fn wasm_opt(
         if debug_info {
             command.arg("-g");
         }
+
+        #[cfg(windows)]
+        let delete_guard = {
+            use std::io::Write;
+
+            let mut binary = binary;
+            let tmp = tempfile::NamedTempFile::new()?;
+            tmp.as_file().write(&mut binary)?;
+            command.arg(tmp.path());
+            tmp
+        };
+
+        #[cfg(unix)]
+        {
+            use std::io::{Seek, SeekFrom, Write};
+
+            let mut binary = binary;
+            let mut file = tempfile::tempfile()?;
+            file.write(&mut binary)?;
+            file.seek(SeekFrom::Start(0))?;
+            command.stdin(file);
+        }
+
         let output = command.output()?;
         if !output.status.success() {
             bail!("command `wasm-opt` failed.");
