@@ -15,7 +15,7 @@ pub(crate) fn install_wasm_opt() -> Result<PathBuf> {
     );
 
     #[cfg(target_os = "macos")]
-    let binaries = &["wasm-opt", "libbinaryen.dylib"];
+    let binaries = &["wasm-opt", "libbinaryen"];
     #[cfg(not(target_os = "macos"))]
     let binaries = &["wasm-opt"];
 
