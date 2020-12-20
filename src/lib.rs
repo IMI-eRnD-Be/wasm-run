@@ -577,7 +577,7 @@ fn wasm_opt(
     return {
         let wasm_opt = prebuilt_wasm_opt::install_wasm_opt()?;
 
-        let mut command = Command::new(wasm_opt);
+        let mut command = Command::new(&wasm_opt);
         command
             .stderr(std::process::Stdio::inherit())
             .args(&["-o", "-", "-O"])
@@ -585,6 +585,12 @@ fn wasm_opt(
             .args(&["-s", &shrink_level.to_string()]);
         if debug_info {
             command.arg("-g");
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            command.env("DYLD_LIBRARY_PATH", wasm_opt.parent().unwrap());
+            todo!("{}", wasm_opt.parent().unwrap().display());
         }
 
         #[cfg(windows)]
