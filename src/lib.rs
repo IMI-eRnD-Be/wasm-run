@@ -374,6 +374,15 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
 
     let package = args.package();
 
+    let build_path = args.build_path();
+    let _ = fs::remove_dir_all(build_path);
+    fs::create_dir_all(build_path).with_context(|| {
+        format!(
+            "could not create build directory `{}`",
+            build_path.display()
+        )
+    })?;
+
     let mut command = Command::new("cargo");
 
     command
@@ -402,15 +411,6 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             bail!("build process has been terminated by a signal");
         }
     }
-
-    let build_path = args.build_path();
-    let _ = fs::remove_dir_all(build_path);
-    fs::create_dir_all(build_path).with_context(|| {
-        format!(
-            "could not create build directory `{}`",
-            build_path.display()
-        )
-    })?;
 
     let wasm_path = args
         .metadata()
