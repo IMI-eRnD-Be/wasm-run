@@ -38,10 +38,16 @@ jobs:
             examples/backend-and-frontend/target
           key: main-${{ steps.main_commit.outputs.hash }}
 
-      - name: Install target wasm32-unknown-unknown
+      - name: Install target wasm32-unknown-unknown (stable)
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Install target wasm32-unknown-unknown (nightly)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
           target: wasm32-unknown-unknown
 
       - name: cargo test
