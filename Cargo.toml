@@ -34,7 +34,7 @@ structopt = "0.3"
 tempfile = { version = "3.1.0", optional = true }
 tide = { version = "0.15", optional = true }
 wasm-bindgen-cli-support = "0.2.68"
-wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.5.0" }
+wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "^0.6.1"}
 
 [workspace]
 members = [
