@@ -43,12 +43,6 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Install target wasm32-unknown-unknown (nightly)
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          target: wasm32-unknown-unknown
-
       - name: cargo test
         uses: actions-rs/cargo@v1
         with:
