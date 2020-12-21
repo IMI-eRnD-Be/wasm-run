@@ -30,6 +30,10 @@
 //!     during the development (any file change is also detected and it rebuilds and restart
 //!     automatically).
 //!
+//! # Usage
+//!
+//! All the details about the hooks can be find on the macro [`main`].
+//!
 //! # Additional Information
 //!
 //!  *  You can use this library to build examples in the `examples/` directory of your project.
@@ -53,6 +57,7 @@ use anyhow::{bail, Context, Result};
 use cargo_metadata::MetadataCommand;
 use cargo_metadata::{Metadata, Package};
 use downcast_rs::*;
+use fs_extra::dir;
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
 use std::fs;
@@ -285,22 +290,33 @@ impl ServeArgs for DefaultServeArgs {
 }
 
 /// Hooks.
+///
+/// Check the code of [`Hooks::default()`] implementation to see what they do by default.
+///
+/// If you don't provide your own hook, the default code will be executed. But if you do provide a
+/// hook, the code will be *replaced*.
 pub struct Hooks {
-    /// This hook will be run before the WASM is optimized.
+    /// This hook will be run before the WASM is compiled. It does nothing by default.
+    /// You can tweak the command-line arguments of the build command here or create additional
+    /// files in the build directory.
     pub pre_build:
         Box<dyn Fn(&dyn BuildArgs, BuildProfile, &mut Command) -> Result<()> + Send + Sync>,
 
-    /// This hook will be run after the WASM is optimized.
+    /// This hook will be run after the WASM is compiled and optimized.
+    /// By default it copies the static files to the build directory.
     #[allow(clippy::type_complexity)]
     pub post_build:
         Box<dyn Fn(&dyn BuildArgs, BuildProfile, String, Vec<u8>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before running the HTTP server.
+    /// By default it will add routes to the files in the build directory.
     #[cfg(feature = "serve")]
     #[allow(clippy::type_complexity)]
     pub serve: Box<dyn Fn(&dyn ServeArgs, &mut Server<()>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before starting to watch for changes in files.
+    /// By default it will add all the `src/` directories and `Cargo.toml` files of all the crates
+    /// in the workspace plus the `static/` directory if it exists in the frontend crate.
     pub watch: Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
 }
 
@@ -315,6 +331,7 @@ impl Default for Hooks {
                 let metadata = args.build_args().metadata();
 
                 let _ = watcher.watch("index.html", RecursiveMode::Recursive);
+                let _ = watcher.watch("static", RecursiveMode::Recursive);
 
                 let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
@@ -331,19 +348,53 @@ impl Default for Hooks {
             pre_build: Box::new(|_, _, _| Ok(())),
             post_build: Box::new(|args, _, wasm_js, wasm_bin| {
                 let build_path = args.build_path();
-                let index_path = build_path.join("index.html");
+                let wasm_js_path = build_path.join("app.js");
+                let wasm_bin_path = build_path.join("app_bg.wasm");
 
-                if fs::copy("index.html", &index_path).is_err() {
+                fs::write(&wasm_js_path, wasm_js).with_context(|| {
+                    format!("could not write JS file to `{}`", wasm_js_path.display())
+                })?;
+                fs::write(&wasm_bin_path, wasm_bin).with_context(|| {
+                    format!("could not write WASM file to `{}`", wasm_bin_path.display())
+                })?;
+
+                let index_path = build_path.join("index.html");
+                let static_dir = args
+                    .package()
+                    .manifest_path
+                    .parent()
+                    .unwrap()
+                    .join("static");
+
+                if index_path.exists() {
+                    fs::copy("index.html", &index_path).context(format!(
+                        "could not copy index.html to `{}`",
+                        index_path.display()
+                    ))?;
+                } else if static_dir.exists() {
+                    dir::copy(
+                        &static_dir,
+                        &build_path,
+                        &dir::CopyOptions {
+                            content_only: true,
+                            ..dir::CopyOptions::new()
+                        },
+                    )
+                    .with_context(|| {
+                        format!(
+                            "could not copy content of directory static: `{}` to `{}`",
+                            static_dir.display(),
+                            build_path.display()
+                        )
+                    })?;
+                } else {
                     fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
                         format!(
-                            "could not copy index.html nor write default to `{}`",
+                            "could not write default index.html to `{}`",
                             index_path.display()
                         )
                     })?;
                 }
-                fs::write(args.build_path().join("app.js"), wasm_js)?;
-                fs::write(build_path.join("app_bg.wasm"), wasm_bin)
-                    .context("could not write WASM file")?;
 
                 Ok(())
             }),
@@ -641,6 +692,7 @@ pub mod prelude {
     pub use async_std;
     pub use cargo_metadata;
     pub use cargo_metadata::{Metadata, Package};
+    pub use fs_extra;
     #[cfg(feature = "serve")]
     pub use futures;
     pub use notify;
