@@ -1,9 +1,9 @@
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use std::process::Command;
 use structopt::StructOpt;
 use wasm_run::prelude::*;
-use std::process::Command;
-use std::path::Path;
-use std::fs;
-use std::io::{Write};
 
 #[wasm_run::main("frontend", run_server = run, other_cli_commands = other_cli_commands)]
 #[derive(StructOpt, Debug)]
@@ -22,7 +22,7 @@ fn other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> any
             println!("Building frontend...");
 
             let status = Command::new("cargo")
-                .args(&["run", "-p", "frontend", "--", "build"])
+                .args(&["run", "--", "build"])
                 .status()
                 .unwrap();
             if !status.success() {
@@ -32,7 +32,14 @@ fn other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> any
             println!("Building backend...");
 
             let status = Command::new("cargo")
-                .args(&["build", "--release", "-p", "backend", "--target", "x86_64-unknown-linux-musl"])
+                .args(&[
+                    "build",
+                    "--release",
+                    "-p",
+                    "backend",
+                    "--target",
+                    "x86_64-unknown-linux-musl",
+                ])
                 .status()
                 .unwrap();
             if !status.success() {
@@ -44,7 +51,10 @@ fn other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> any
             let dockerfile = Path::new("Dockerfile");
             let mut f = fs::File::create(&dockerfile)?;
             writeln!(f, "FROM gcr.io/distroless/cc")?;
-            writeln!(f, "ADD target/x86_64-unknown-linux-musl/release/backend /backend")?;
+            writeln!(
+                f,
+                "ADD target/x86_64-unknown-linux-musl/release/backend /backend"
+            )?;
             writeln!(f, "ADD build /build")?;
             writeln!(f, "ENTRYPOINT [\"/backend\"]")?;
             drop(f);
@@ -58,6 +68,6 @@ fn other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> any
             }
 
             Ok(())
-        },
+        }
     }
 }

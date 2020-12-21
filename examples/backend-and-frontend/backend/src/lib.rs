@@ -1,7 +1,7 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
 use rocket::response::NamedFile;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
 #[rocket::get("/")]
 pub fn index() -> Option<NamedFile> {
@@ -14,5 +14,7 @@ pub fn files(file: PathBuf) -> Option<NamedFile> {
 }
 
 pub fn run() -> rocket::error::LaunchError {
-    rocket::ignite().mount("/", rocket::routes![index, files]).launch()
+    rocket::ignite()
+        .mount("/", rocket::routes![index, files])
+        .launch()
 }
