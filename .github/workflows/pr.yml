@@ -37,12 +37,6 @@ jobs:
           key: ${{ github.event.issue.number }}-${{ runner.os }}-pr
           restore-keys: main-${{ steps.main_commit.outputs.hash }}
 
-      - name: Install target wasm32-unknown-unknown (stable)
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
       - name: cargo test
         uses: actions-rs/cargo@v1
         with:
