@@ -200,6 +200,14 @@ use syn::{parse_macro_input, ItemEnum};
 ///         })?;
 ///     }
 ///
+///     #[cfg(feature = "sass")]
+///     {
+///         let options = args.sass_options(profile);
+///         for style_path in args.sass_lookup_directories() {
+///             args.build_sass_from_dir(&style_path, options.clone())?;
+///         }
+///     }
+///
 ///     Ok(())
 /// }
 ///

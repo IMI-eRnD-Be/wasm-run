@@ -178,6 +178,81 @@ pub trait BuildArgs: Downcast {
     /// Create a profiling build. Enable optimizations and debug info.
     fn profiling(&self) -> bool;
 
+    /// Transpile SASS and SCSS files to CSS in the build directory.
+    #[cfg(feature = "sass")]
+    fn build_sass_from_dir(
+        &self,
+        input_dir: &std::path::Path,
+        options: sass_rs::Options,
+    ) -> Result<()> {
+        use walkdir::{DirEntry, WalkDir};
+
+        let build_path = self.build_path();
+
+        fn is_sass(entry: &DirEntry) -> bool {
+            matches!(
+                entry.path().extension().map(|x| x.to_str()).flatten(),
+                Some("sass") | Some("scss")
+            )
+        }
+
+        fn should_ignore(entry: &DirEntry) -> bool {
+            entry
+                .file_name()
+                .to_str()
+                .map(|x| x.starts_with("_"))
+                .unwrap_or(false)
+        }
+
+        let walker = WalkDir::new(&input_dir).into_iter();
+        for entry in walker.filter_entry(|x| is_sass(x) && !should_ignore(x)) {
+            let entry = entry?;
+            let file_path = entry.path();
+            let css_path = build_path.join(file_path.strip_prefix(&input_dir).unwrap());
+
+            match sass_rs::compile_file(file_path, options.clone()) {
+                Ok(css) => {
+                    let _ = fs::create_dir_all(css_path.parent().unwrap());
+                    fs::write(&css_path, css)?;
+                }
+                Err(err) => bail!(
+                    "could not convert SASS file `{}` to `{}`: {}",
+                    file_path.display(),
+                    "todo",
+                    err,
+                ),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns a list of directories to lookup to transpile SASS and SCSS files to CSS.
+    #[cfg(feature = "sass")]
+    fn sass_lookup_directories(&self) -> Vec<PathBuf> {
+        const STYLE_CANDIDATES: &[&str] = &["assets", "styles", "css", "sass"];
+
+        let package_path = self.package().manifest_path.parent().unwrap();
+
+        STYLE_CANDIDATES
+            .iter()
+            .map(|x| package_path.join(x))
+            .filter(|x| x.exists())
+            .collect()
+    }
+
+    /// Default profile to transpile SASS and SCSS files to CSS.
+    #[cfg(feature = "sass")]
+    fn sass_options(&self, profile: BuildProfile) -> sass_rs::Options {
+        sass_rs::Options {
+            output_style: match profile {
+                BuildProfile::Release | BuildProfile::Profiling => sass_rs::OutputStyle::Compressed,
+                _ => sass_rs::OutputStyle::Nested,
+            },
+            ..sass_rs::Options::default()
+        }
+    }
+
     /// Run the `build` command.
     fn run(self, hooks: Hooks) -> Result<()>
     where
@@ -346,58 +421,68 @@ impl Default for Hooks {
                 Ok(())
             }),
             pre_build: Box::new(|_, _, _| Ok(())),
-            post_build: Box::new(|args, _, wasm_js, wasm_bin| {
-                let build_path = args.build_path();
-                let wasm_js_path = build_path.join("app.js");
-                let wasm_bin_path = build_path.join("app_bg.wasm");
+            post_build: Box::new(
+                |args, #[allow(unused_variables)] profile, wasm_js, wasm_bin| {
+                    let build_path = args.build_path();
+                    let wasm_js_path = build_path.join("app.js");
+                    let wasm_bin_path = build_path.join("app_bg.wasm");
 
-                fs::write(&wasm_js_path, wasm_js).with_context(|| {
-                    format!("could not write JS file to `{}`", wasm_js_path.display())
-                })?;
-                fs::write(&wasm_bin_path, wasm_bin).with_context(|| {
-                    format!("could not write WASM file to `{}`", wasm_bin_path.display())
-                })?;
-
-                let index_path = build_path.join("index.html");
-                let static_dir = args
-                    .package()
-                    .manifest_path
-                    .parent()
-                    .unwrap()
-                    .join("static");
-
-                if index_path.exists() {
-                    fs::copy("index.html", &index_path).context(format!(
-                        "could not copy index.html to `{}`",
-                        index_path.display()
-                    ))?;
-                } else if static_dir.exists() {
-                    dir::copy(
-                        &static_dir,
-                        &build_path,
-                        &dir::CopyOptions {
-                            content_only: true,
-                            ..dir::CopyOptions::new()
-                        },
-                    )
-                    .with_context(|| {
-                        format!(
-                            "could not copy content of directory static: `{}` to `{}`",
-                            static_dir.display(),
-                            build_path.display()
-                        )
+                    fs::write(&wasm_js_path, wasm_js).with_context(|| {
+                        format!("could not write JS file to `{}`", wasm_js_path.display())
                     })?;
-                } else {
-                    fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
-                        format!(
-                            "could not write default index.html to `{}`",
+                    fs::write(&wasm_bin_path, wasm_bin).with_context(|| {
+                        format!("could not write WASM file to `{}`", wasm_bin_path.display())
+                    })?;
+
+                    let index_path = build_path.join("index.html");
+                    let static_dir = args
+                        .package()
+                        .manifest_path
+                        .parent()
+                        .unwrap()
+                        .join("static");
+
+                    if index_path.exists() {
+                        fs::copy("index.html", &index_path).context(format!(
+                            "could not copy index.html to `{}`",
                             index_path.display()
+                        ))?;
+                    } else if static_dir.exists() {
+                        dir::copy(
+                            &static_dir,
+                            &build_path,
+                            &dir::CopyOptions {
+                                content_only: true,
+                                ..dir::CopyOptions::new()
+                            },
                         )
-                    })?;
-                }
+                        .with_context(|| {
+                            format!(
+                                "could not copy content of directory static: `{}` to `{}`",
+                                static_dir.display(),
+                                build_path.display()
+                            )
+                        })?;
+                    } else {
+                        fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
+                            format!(
+                                "could not write default index.html to `{}`",
+                                index_path.display()
+                            )
+                        })?;
+                    }
 
-                Ok(())
-            }),
+                    #[cfg(feature = "sass")]
+                    {
+                        let options = args.sass_options(profile);
+                        for style_path in args.sass_lookup_directories() {
+                            args.build_sass_from_dir(&style_path, options.clone())?;
+                        }
+                    }
+
+                    Ok(())
+                },
+            ),
             #[cfg(feature = "serve")]
             serve: Box::new(|args, server| {
                 use tide::{Body, Response};
@@ -697,6 +782,8 @@ pub mod prelude {
     pub use futures;
     pub use notify;
     pub use notify::RecommendedWatcher;
+    #[cfg(feature = "sass")]
+    pub use sass_rs;
     #[cfg(feature = "serve")]
     pub use tide;
     #[cfg(feature = "serve")]
