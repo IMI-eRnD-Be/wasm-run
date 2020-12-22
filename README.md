@@ -1,8 +1,16 @@
 # wasm-run
 
+![Rust](https://github.com/IMI-eRnD-Be/wasm-run/workflows/main/badge.svg)
+[![Latest Version](https://img.shields.io/crates/v/wasm-run.svg)](https://crates.io/crates/wasm-run)
+[![Docs.rs](https://docs.rs/wasm-run/badge.svg)](https://docs.rs/wasm-run)
+[![LOC](https://tokei.rs/b1/github/IMI-eRnD-Be/wasm-run)](https://github.com/IMI-eRnD-Be/wasm-run)
+[![Dependency Status](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run/status.svg)](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run)
+![License](https://img.shields.io/crates/l/wasm-run)
+
 ## Synopsis
 
-Build tool that replaces `cargo run` to build WASM projects.
+Build tool that replaces `cargo run` to build WASM projects. Just like webpack, `wasm-run`
+offers a great deal of customization.
 
 To build your WASM project you normally need an external tool like `wasm-bindgen`, `wasm-pack`
 or `cargo-wasm`. `wasm-run` takes a different approach: it's a library that you install as a
@@ -32,10 +40,14 @@ There are two basic examples to help you get started quickly:
     during the development (any file change is also detected and it rebuilds and restart
     automatically).
 
+## Usage
+
+All the details about the hooks can be find on the macro [`main`].
+
 ## Additional Information
 
  *  You can use this library to build examples in the `examples/` directory of your project.
-    `cargo run --example your_example -- serve`. But you will need to specific the name of the
+    `cargo run --example your_example -- serve`. But you will need to specify the name of the
     WASM crate in your project and it must be present in the workspace. Please check the
     ["example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/example.rs) example.
  *  If you want to use your own backend you will need to disable the `serve` feature by
@@ -45,5 +57,6 @@ There are two basic examples to help you get started quickly:
  *  You can add commands to the CLI by adding variants in the `enum`.
  *  You can add parameters to the `Build` and `Serve` commands by overriding them. Please check
     the documentation on the macro `main`.
+ *  If you run `cargo run -- serve --profiling`, the WASM will be optimized.
 
 License: MIT OR Apache-2.0

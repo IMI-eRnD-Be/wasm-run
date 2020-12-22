@@ -1,6 +1,14 @@
+//! ![Rust](https://github.com/IMI-eRnD-Be/wasm-run/workflows/main/badge.svg)
+//! [![Latest Version](https://img.shields.io/crates/v/wasm-run.svg)](https://crates.io/crates/wasm-run)
+//! [![Docs.rs](https://docs.rs/wasm-run/badge.svg)](https://docs.rs/wasm-run)
+//! [![LOC](https://tokei.rs/b1/github/IMI-eRnD-Be/wasm-run)](https://github.com/IMI-eRnD-Be/wasm-run)
+//! [![Dependency Status](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run/status.svg)](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run)
+//! ![License](https://img.shields.io/crates/l/wasm-run)
+//!
 //! # Synopsis
 //!
-//! Build tool that replaces `cargo run` to build WASM projects.
+//! Build tool that replaces `cargo run` to build WASM projects. Just like webpack, `wasm-run`
+//! offers a great deal of customization.
 //!
 //! To build your WASM project you normally need an external tool like `wasm-bindgen`, `wasm-pack`
 //! or `cargo-wasm`. `wasm-run` takes a different approach: it's a library that you install as a
@@ -47,6 +55,7 @@
 //!  *  You can add commands to the CLI by adding variants in the `enum`.
 //!  *  You can add parameters to the `Build` and `Serve` commands by overriding them. Please check
 //!     the documentation on the macro `main`.
+//!  *  If you run `cargo run -- serve --profiling`, the WASM will be optimized.
 
 #![warn(missing_docs)]
 
@@ -205,20 +214,35 @@ pub trait BuildArgs: Downcast {
         }
 
         let walker = WalkDir::new(&input_dir).into_iter();
-        for entry in walker.filter_entry(|x| is_sass(x) && !should_ignore(x)) {
-            let entry = entry?;
+        for entry in walker
+            .filter_map(|x| match x {
+                Ok(x) => Some(x),
+                Err(err) => {
+                    eprintln!(
+                        "WARNING: could not walk into directory: `{}`",
+                        input_dir.display()
+                    );
+                    None
+                }
+            })
+            .filter(|x| x.path().is_file() && is_sass(x) && !should_ignore(x))
+        {
             let file_path = entry.path();
-            let css_path = build_path.join(file_path.strip_prefix(&input_dir).unwrap());
+            let css_path = build_path
+                .join(file_path.strip_prefix(&input_dir).unwrap())
+                .with_extension("css");
 
             match sass_rs::compile_file(file_path, options.clone()) {
                 Ok(css) => {
                     let _ = fs::create_dir_all(css_path.parent().unwrap());
-                    fs::write(&css_path, css)?;
+                    fs::write(&css_path, css).with_context(|| {
+                        format!("could not write CSS to file `{}`", css_path.display())
+                    })?;
                 }
                 Err(err) => bail!(
                     "could not convert SASS file `{}` to `{}`: {}",
                     file_path.display(),
-                    "todo",
+                    css_path.display(),
                     err,
                 ),
             }
@@ -229,7 +253,7 @@ pub trait BuildArgs: Downcast {
 
     /// Returns a list of directories to lookup to transpile SASS and SCSS files to CSS.
     #[cfg(feature = "sass")]
-    fn sass_lookup_directories(&self) -> Vec<PathBuf> {
+    fn sass_lookup_directories(&self, _profile: BuildProfile) -> Vec<PathBuf> {
         const STYLE_CANDIDATES: &[&str] = &["assets", "styles", "css", "sass"];
 
         let package_path = self.package().manifest_path.parent().unwrap();
@@ -475,7 +499,7 @@ impl Default for Hooks {
                     #[cfg(feature = "sass")]
                     {
                         let options = args.sass_options(profile);
-                        for style_path in args.sass_lookup_directories() {
+                        for style_path in args.sass_lookup_directories(profile) {
                             args.build_sass_from_dir(&style_path, options.clone())?;
                         }
                     }
