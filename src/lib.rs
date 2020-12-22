@@ -56,6 +56,24 @@
 //!  *  You can add parameters to the `Build` and `Serve` commands by overriding them. Please check
 //!     the documentation on the macro `main`.
 //!  *  If you run `cargo run -- serve --profiling`, the WASM will be optimized.
+//!
+//! # Features
+//!
+//!  *  `prebuilt-wasm-opt`: if you disable the default features and enable this feature, a binary
+//!     of wasm-opt will be downloaded from GitHub and used to optimize the WASM. By default,
+//!     wasm-opt is compiled among the dependencies (`binaryen`). This is useful if you run into
+//!     troubles for building `binaryen-sys`. (`binaryen` cannot be built on Netlify at the
+//!     moment.)
+//!  *  `sass`: support for SASS and SCSS. All SASS and SCSS files found in the directories
+//!     `styles/`, `assets/`, `sass/` and `css/` will be automatically transpiled to CSS and placed
+//!     in the build directory. This can be configured by overriding:
+//!     [`BuildArgs::build_sass_from_dir`], [`BuildArgs::sass_lookup_directories`],
+//!     [`BuildArgs::sass_options`] or completely overriden in the [`Hooks::post_build`] hook.
+//!     `sass-rs` is re-exported in the prelude of `wasm-run` for this purpose.
+//!  *  `full-restart`: when this feature is active, the command is entirely restarted when changes
+//!     are detected when serving files for development (`cargo run -- serve`). This is useful with
+//!     custom `serve` command that uses a custom backend and if you need to detect changes in the
+//!     backend code itself.
 
 #![warn(missing_docs)]
 
