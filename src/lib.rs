@@ -296,11 +296,12 @@ pub trait BuildArgs: Downcast {
     }
 
     /// Run the `build` command.
-    fn run(self, hooks: Hooks) -> Result<()>
+    fn run(self, hooks: Hooks) -> Result<PathBuf>
     where
         Self: Sized + 'static,
     {
-        build(BuildProfile::Release, &self, &hooks)
+        build(BuildProfile::Release, &self, &hooks)?;
+        Ok(self.build_path().to_owned())
     }
 }
 

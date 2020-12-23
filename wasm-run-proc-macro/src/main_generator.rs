@@ -53,7 +53,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     let other_cli_commands = other_cli_commands
         .map(|x| {
             quote_spanned! {span=>
-                __WasmRunCliCommand::Other(cli) => #x(cli, metadata, package)?,
+                WasmRunCliCommand::Other(cli) => #x(cli, metadata, package)?,
             }
         })
         .unwrap_or_else(|| {
@@ -70,7 +70,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 }
             } else {
                 quote! {
-                    __WasmRunCliCommand::Other(x) => match x {},
+                    WasmRunCliCommand::Other(x) => match x {},
                 }
             }
         });
@@ -145,7 +145,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     #[cfg(not(feature = "serve"))]
     let run_server_arm = if let Some(run_server) = run_server {
         quote_spanned! {run_server.span()=>
-            __WasmRunCliCommand::RunServer(args) => #run_server(args)?,
+            WasmRunCliCommand::RunServer(args) => #run_server(args)?,
         }
     } else {
         quote! {
@@ -169,23 +169,32 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     Ok(quote! {
         #check_package_existence
 
-        #[derive(::wasm_run::structopt::StructOpt)]
-        struct __WasmRunCli {
-            #[structopt(subcommand)]
-            command: Option<__WasmRunCliCommand>,
-        }
-
-        #[derive(::wasm_run::structopt::StructOpt)]
-        enum __WasmRunCliCommand {
-            Build(#build_ty),
-            Serve(#serve_ty),
-            #run_variant
-            Other(#ident),
-        }
-
         #( #attrs )*
         #vis enum #ident #generics {
             #variants
+        }
+
+        impl #ident {
+            #[allow(clippy::needless_update)]
+            fn hooks() -> ::wasm_run::Hooks {
+                ::wasm_run::Hooks {
+                    #pre_build
+                    #post_build
+                    #serve
+                    #watch
+                    .. ::wasm_run::Hooks::default()
+                }
+            }
+
+            fn build<I>(iter: I) -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
+            where
+                I: ::std::iter::IntoIterator,
+                I::Item: ::std::convert::Into<::std::ffi::OsString> + Clone,
+            {
+                use ::wasm_run::BuildArgs;
+                let build_args = #build_ty::from_iter_safe(iter)?;
+                build_args.run(Self::hooks())
+            }
         }
 
         fn main() -> ::wasm_run::prelude::anyhow::Result<()> {
@@ -193,28 +202,35 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             use ::wasm_run::structopt::StructOpt;
             use ::wasm_run::prelude::*;
 
-            let cli = __WasmRunCli::from_args();
+            #[derive(::wasm_run::structopt::StructOpt)]
+            struct WasmRunCli {
+                #[structopt(subcommand)]
+                command: Option<WasmRunCliCommand>,
+            }
+
+            #[derive(::wasm_run::structopt::StructOpt)]
+            enum WasmRunCliCommand {
+                Build(#build_ty),
+                Serve(#serve_ty),
+                #run_variant
+                Other(#ident),
+            }
+
+            let cli = WasmRunCli::from_args();
 
             let (metadata, package) = ::wasm_run::wasm_run_init(#pkg_name, #default_build_path)?;
 
-            #[allow(clippy::needless_update)]
-            let hooks = ::wasm_run::Hooks {
-                #pre_build
-                #post_build
-                #serve
-                #watch
-                .. Hooks::default()
-            };
-
             if let Some(cli) = cli.command {
                 match cli {
-                    __WasmRunCliCommand::Build(args) => args.run(hooks)?,
-                    __WasmRunCliCommand::Serve(args) => args.run(hooks)?,
+                    WasmRunCliCommand::Build(args) => {
+                        args.run(#ident::hooks())?;
+                    },
+                    WasmRunCliCommand::Serve(args) => args.run(#ident::hooks())?,
                     #run_server_arm
                     #other_cli_commands
                 }
             } else {
-                #serve_ty::from_args().run(hooks)?;
+                #serve_ty::from_args().run(#ident::hooks())?;
             }
 
             Ok(())
