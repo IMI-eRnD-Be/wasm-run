@@ -34,8 +34,11 @@ impl Attr {
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
-            let _eq_token: Token![=] = input.parse()?;
-            let path: Path = input.parse()?;
+            let path: Path = if input.parse::<Token![=]>().is_ok() {
+                input.parse()?
+            } else {
+                ident.clone().into()
+            };
 
             match ident.to_string().as_str() {
                 "other_cli_commands" => other_cli_commands = Some(path),
