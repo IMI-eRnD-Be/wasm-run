@@ -186,12 +186,22 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 }
             }
 
-            fn build<I>(iter: I) -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
+            fn build() -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
+            {
+                use ::wasm_run::BuildArgs;
+                let build_args = #build_ty::from_iter_safe(&[#pkg_name])?;
+                build_args.run(Self::hooks())
+            }
+
+            fn build_with_args<I>(iter: I)
+            -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
             where
                 I: ::std::iter::IntoIterator,
                 I::Item: ::std::convert::Into<::std::ffi::OsString> + Clone,
             {
                 use ::wasm_run::BuildArgs;
+                let iter = ::std::iter::once(::std::ffi::OsString::from(#pkg_name))
+                    .chain(iter.into_iter().map(|x| x.into()));
                 let build_args = #build_ty::from_iter_safe(iter)?;
                 build_args.run(Self::hooks())
             }
@@ -213,6 +223,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 Build(#build_ty),
                 Serve(#serve_ty),
                 #run_variant
+                #[structopt(flatten)]
                 Other(#ident),
             }
 
