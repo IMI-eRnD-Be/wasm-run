@@ -12,6 +12,8 @@ pub struct Attr {
     pub watch: Option<Path>,
     pub pkg_name: Option<LitStr>,
     pub default_build_path: Option<Path>,
+    pub build_args: Option<Path>,
+    pub serve_args: Option<Path>,
 }
 
 impl Attr {
@@ -31,6 +33,8 @@ impl Attr {
         let mut serve = None;
         let mut watch = None;
         let mut default_build_path = None;
+        let mut build_args = None;
+        let mut serve_args = None;
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -50,6 +54,8 @@ impl Attr {
                 "run_server" => run_server = Some(path),
                 "watch" => watch = Some(path),
                 "default_build_path" => default_build_path = Some(path),
+                "build_args" => build_args = Some(path),
+                "serve_args" => serve_args = Some(path),
                 _ => return Err(Error::new(ident.span(), "invalid argument")),
             }
 
@@ -71,6 +77,8 @@ impl Attr {
             watch,
             pkg_name,
             default_build_path,
+            build_args,
+            serve_args,
         })
     }
 }

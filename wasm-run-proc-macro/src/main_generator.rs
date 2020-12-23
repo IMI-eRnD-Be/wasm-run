@@ -1,19 +1,12 @@
 use crate::attr_parser::Attr;
 use cargo_metadata::Metadata;
 use proc_macro2::TokenStream;
-use quote::{quote, quote_spanned, ToTokens};
+use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{Fields, ItemEnum};
+use syn::{Error, ItemEnum};
 
 pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<TokenStream> {
-    let ItemEnum {
-        attrs,
-        vis,
-        ident,
-        generics,
-        variants,
-        ..
-    } = item;
+    let ident = &item.ident;
     let Attr {
         other_cli_commands,
         #[cfg(not(feature = "serve"))]
@@ -25,55 +18,30 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         watch,
         pkg_name,
         default_build_path,
+        build_args,
+        serve_args,
     } = attr;
 
-    let (build_variant, build_ty) =
-        if let Some(variant) = variants.iter().find(|x| x.ident == "Build") {
-            match &variant.fields {
-                Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                    (None, fields.unnamed[0].ty.to_token_stream())
-                }
-                _ => (
-                    None,
-                    quote_spanned!(variant.fields.span()=>
-                        compile_error!("only the tuple variant with only one struct is allowed. \
-                            Example: Build(YourBuildArgs)")),
-                ),
-            }
-        } else {
-            let ty = quote!(::wasm_run::DefaultBuildArgs);
-            (
-                Some(quote! {
-                    /// Build for production.
-                    Build(#ty),
-                }),
-                ty,
-            )
-        };
+    if let Some(serve_args) = serve_args.as_ref() {
+        if build_args.is_none() {
+            return Err(Error::new(
+                serve_args.span(),
+                "if you use a custom ServeArgs, you must use a custom BuildArgs",
+            ));
+        }
+    }
 
-    let (serve_variant, serve_ty) =
-        if let Some(variant) = variants.iter().find(|x| x.ident == "Serve") {
-            match &variant.fields {
-                Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                    (None, fields.unnamed[0].ty.to_token_stream())
-                }
-                _ => (
-                    None,
-                    quote_spanned!(variant.fields.span()=>
-                        compile_error!("only the tuple variant with only one struct is allowed. \
-                            Example: Serve(YourServeArgs)")),
-                ),
-            }
-        } else {
-            let ty = quote!(::wasm_run::DefaultServeArgs);
-            (
-                Some(quote! {
-                    /// Run development server.
-                    Serve(#ty),
-                }),
-                ty,
-            )
-        };
+    let build_ty = if let Some(ty) = build_args {
+        quote! { #ty }
+    } else {
+        quote! { ::wasm_run::DefaultBuildArgs }
+    };
+
+    let serve_ty = if let Some(ty) = serve_args {
+        quote! { #ty }
+    } else {
+        quote! { ::wasm_run::DefaultServeArgs }
+    };
 
     #[cfg(feature = "serve")]
     let run_variant = quote! {};
@@ -85,21 +53,22 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
 
     let span = other_cli_commands.span();
     let other_cli_commands = other_cli_commands
-        .map(|x| quote_spanned! {span=> cli => #x(cli, metadata, package)?, })
+        .map(|x| {
+            quote_spanned! {span=>
+                WasmRunCliCommand::Other(cli) => #x(cli, metadata, package)?,
+            }
+        })
         .unwrap_or_else(|| {
-            if variants
-                .iter()
-                .filter(|x| x.ident != "Build" && x.ident != "Serve")
-                .count()
-                > 0
-            {
+            if !item.variants.is_empty() {
                 quote! {
                     cli => compile_error!(
                         "missing `other_cli_commands` to handle all the variants",
                     ),
                 }
             } else {
-                quote! {}
+                quote! {
+                    WasmRunCliCommand::Other(x) => match x {},
+                }
             }
         });
 
@@ -148,7 +117,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         }
     });
 
-    let mut check_package_existence = quote! {};
     if let Some(pkg_name) = pkg_name.as_ref() {
         let span = pkg_name.span();
         let pkg_name = pkg_name.value();
@@ -158,8 +126,10 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             .find(|x| x.name == pkg_name)
             .is_none()
         {
-            let message = format!("package `{}` not found", pkg_name);
-            check_package_existence = quote_spanned! {span=> compile_error!(#message); };
+            return Err(Error::new(
+                span,
+                format!("package `{}` not found", pkg_name),
+            ));
         }
     }
 
@@ -173,7 +143,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     #[cfg(not(feature = "serve"))]
     let run_server_arm = if let Some(run_server) = run_server {
         quote_spanned! {run_server.span()=>
-            #ident::RunServer(args) => #run_server(args)?,
+            WasmRunCliCommand::RunServer(args) => #run_server(args)?,
         }
     } else {
         quote! {
@@ -195,14 +165,28 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     };
 
     Ok(quote! {
-        #check_package_existence
+        #item
 
-        #( #attrs )*
-        #vis enum #ident #generics {
-            #serve_variant
-            #build_variant
-            #run_variant
-            #variants
+        impl #ident {
+            fn build() -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
+            {
+                use ::wasm_run::BuildArgs;
+                let build_args = #build_ty::from_iter_safe(&[#pkg_name])?;
+                build_args.run()
+            }
+
+            fn build_with_args<I>(iter: I)
+            -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
+            where
+                I: ::std::iter::IntoIterator,
+                I::Item: ::std::convert::Into<::std::ffi::OsString> + Clone,
+            {
+                use ::wasm_run::BuildArgs;
+                let iter = ::std::iter::once(::std::ffi::OsString::from(#pkg_name))
+                    .chain(iter.into_iter().map(|x| x.into()));
+                let build_args = #build_ty::from_iter_safe(iter)?;
+                build_args.run()
+            }
         }
 
         fn main() -> ::wasm_run::prelude::anyhow::Result<()> {
@@ -210,12 +194,25 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             use ::wasm_run::structopt::StructOpt;
             use ::wasm_run::prelude::*;
 
-            let cli = #ident::from_args();
+            #[derive(::wasm_run::structopt::StructOpt)]
+            struct WasmRunCli {
+                #[structopt(subcommand)]
+                command: Option<WasmRunCliCommand>,
+            }
 
-            let (metadata, package) = ::wasm_run::wasm_run_init(#pkg_name, #default_build_path)?;
+            #[derive(::wasm_run::structopt::StructOpt)]
+            enum WasmRunCliCommand {
+                Build(#build_ty),
+                Serve(#serve_ty),
+                #run_variant
+                #[structopt(flatten)]
+                Other(#ident),
+            }
+
+            let cli = WasmRunCli::from_args();
 
             #[allow(clippy::needless_update)]
-            let hooks = ::wasm_run::Hooks {
+            let hooks = Hooks {
                 #pre_build
                 #post_build
                 #serve
@@ -223,11 +220,23 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 .. Hooks::default()
             };
 
-            match cli {
-                #ident::Build(args) => args.run(hooks)?,
-                #ident::Serve(args) => args.run(hooks)?,
-                #run_server_arm
-                #other_cli_commands
+            let (metadata, package) = ::wasm_run::wasm_run_init(
+                #pkg_name,
+                #default_build_path,
+                hooks,
+            )?;
+
+            if let Some(cli) = cli.command {
+                match cli {
+                    WasmRunCliCommand::Build(args) => {
+                        args.run()?;
+                    },
+                    WasmRunCliCommand::Serve(args) => args.run()?,
+                    #run_server_arm
+                    #other_cli_commands
+                }
+            } else {
+                #serve_ty::from_args().run()?;
             }
 
             Ok(())

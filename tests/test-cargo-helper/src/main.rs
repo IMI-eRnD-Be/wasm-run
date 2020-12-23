@@ -44,8 +44,21 @@ fn other_cli_commands(cli: Cli, metadata: &Metadata, package: &Package) -> anyho
             read_messages(&mut cargo);
             cargo.wait_success()?;
 
+            let build_path = Cli::build()?;
+
+            if !build_path.exists() {
+                anyhow::bail!("build path must exist");
+            }
+
+            std::fs::remove_dir_all(build_path)?;
+
+            let build_path = Cli::build_with_args(&["--profiling"])?;
+
+            if !build_path.exists() {
+                anyhow::bail!("build path must exist");
+            }
+
             Ok(())
         }
-        _ => unreachable!(),
     }
 }
