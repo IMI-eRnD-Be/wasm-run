@@ -106,6 +106,7 @@ const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/
 static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
 static PACKAGE: OnceCell<&Package> = OnceCell::new();
+static HOOKS: OnceCell<Hooks> = OnceCell::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// A build profile for the WASM.
@@ -123,6 +124,7 @@ pub enum BuildProfile {
 pub fn wasm_run_init(
     pkg_name: &str,
     default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
+    hooks: Hooks,
 ) -> Result<(&Metadata, &Package)> {
     let metadata = MetadataCommand::new()
         .exec()
@@ -155,6 +157,10 @@ pub fn wasm_run_init(
             metadata.workspace_root.join("build")
         })
         .expect("the cell is initially empty; qed");
+
+    if HOOKS.set(hooks).is_err() {
+        panic!("the cell is initially empty; qed");
+    }
 
     Ok((metadata, package))
 }
@@ -296,11 +302,12 @@ pub trait BuildArgs: Downcast {
     }
 
     /// Run the `build` command.
-    fn run(self, hooks: Hooks) -> Result<PathBuf>
+    fn run(self) -> Result<PathBuf>
     where
         Self: Sized + 'static,
     {
-        build(BuildProfile::Release, &self, &hooks)?;
+        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
+        build(BuildProfile::Release, &self, hooks)?;
         Ok(self.build_path().to_owned())
     }
 }
@@ -361,25 +368,26 @@ pub trait ServeArgs: Downcast + Send {
     fn build_args(&self) -> &dyn BuildArgs;
 
     /// Run the `serve` command.
-    fn run(self, hooks: Hooks) -> Result<()>
+    fn run(self) -> Result<()>
     where
         Self: Sized + 'static,
     {
+        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
         // NOTE: the first step for serving is to call `build` a first time. The build directory
         //       must be present before we start watching files there.
-        build(BuildProfile::Dev, self.build_args(), &hooks)?;
+        build(BuildProfile::Dev, self.build_args(), hooks)?;
         #[cfg(feature = "serve")]
         {
             async_std::task::block_on(async {
-                let t1 = async_std::task::spawn(serve(&self, &hooks)?);
-                let t2 = async_std::task::spawn_blocking(move || watch(&self, &hooks));
+                let t1 = async_std::task::spawn(serve(&self, hooks)?);
+                let t2 = async_std::task::spawn_blocking(move || watch(&self, hooks));
                 futures::try_join!(t1, t2)?;
                 Ok(())
             })
         }
         #[cfg(not(feature = "serve"))]
         {
-            watch(&self, &hooks)
+            watch(&self, hooks)
         }
     }
 }

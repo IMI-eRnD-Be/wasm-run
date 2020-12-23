@@ -168,22 +168,11 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         #item
 
         impl #ident {
-            #[allow(clippy::needless_update)]
-            fn hooks() -> ::wasm_run::Hooks {
-                ::wasm_run::Hooks {
-                    #pre_build
-                    #post_build
-                    #serve
-                    #watch
-                    .. ::wasm_run::Hooks::default()
-                }
-            }
-
             fn build() -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
             {
                 use ::wasm_run::BuildArgs;
                 let build_args = #build_ty::from_iter_safe(&[#pkg_name])?;
-                build_args.run(Self::hooks())
+                build_args.run()
             }
 
             fn build_with_args<I>(iter: I)
@@ -196,7 +185,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 let iter = ::std::iter::once(::std::ffi::OsString::from(#pkg_name))
                     .chain(iter.into_iter().map(|x| x.into()));
                 let build_args = #build_ty::from_iter_safe(iter)?;
-                build_args.run(Self::hooks())
+                build_args.run()
             }
         }
 
@@ -222,19 +211,32 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
 
             let cli = WasmRunCli::from_args();
 
-            let (metadata, package) = ::wasm_run::wasm_run_init(#pkg_name, #default_build_path)?;
+            #[allow(clippy::needless_update)]
+            let hooks = Hooks {
+                #pre_build
+                #post_build
+                #serve
+                #watch
+                .. Hooks::default()
+            };
+
+            let (metadata, package) = ::wasm_run::wasm_run_init(
+                #pkg_name,
+                #default_build_path,
+                hooks,
+            )?;
 
             if let Some(cli) = cli.command {
                 match cli {
                     WasmRunCliCommand::Build(args) => {
-                        args.run(#ident::hooks())?;
+                        args.run()?;
                     },
-                    WasmRunCliCommand::Serve(args) => args.run(#ident::hooks())?,
+                    WasmRunCliCommand::Serve(args) => args.run()?,
                     #run_server_arm
                     #other_cli_commands
                 }
             } else {
-                #serve_ty::from_args().run(#ident::hooks())?;
+                #serve_ty::from_args().run()?;
             }
 
             Ok(())
