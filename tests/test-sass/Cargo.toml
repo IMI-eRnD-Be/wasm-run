@@ -1,0 +1,17 @@
+[package]
+name = "test-crate-name-vs-pkg-name"
+version = "0.1.0"
+authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "^0.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wasm-run = { path = "../..", features = ["sass"] }
+structopt = "0.3"
+
+[workspace]

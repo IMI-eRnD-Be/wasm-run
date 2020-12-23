@@ -41,10 +41,7 @@ fn run_test_crates() {
     let _ = fs::remove_dir_all(&build_path);
     run_crate(&crate_path, &["build"]);
     assert!(build_path.exists(), "test for `default_build_path` failed");
-    assert!(
-        build_path.join("fancy.css").exists(),
-        "test for `default_build_path` failed"
-    );
+    assert!(build_path.join("fancy.css").exists());
 
     let crate_path = tests.join("test-prebuilt-wasm-opt");
     let build_path = crate_path.join("build");
@@ -57,4 +54,17 @@ fn run_test_crates() {
     let _ = fs::remove_dir_all(&build_path);
     run_crate(&crate_path, &["build"]);
     assert!(build_path.exists(), "test for `no-serve` failed");
+
+    let crate_path = tests.join("test-sass");
+    let build_path = crate_path.join("build");
+    let _ = fs::remove_dir_all(&build_path);
+    run_crate(&crate_path, &["build"]);
+    assert!(build_path.exists(), "test for `test-sass` failed");
+    assert!(build_path.join("test1.css").exists());
+    assert!(build_path.join("test2.css").exists());
+    assert!(!build_path.join("_test3.css").exists());
+    assert!(build_path.join("test4.css").exists());
+    assert!(build_path.join("subdirectory").join("test5.css").exists());
+    assert!(!build_path.join("subdirectory").join("_test6.css").exists());
+    assert!(build_path.join("subdirectory").join("test7.css").exists());
 }
