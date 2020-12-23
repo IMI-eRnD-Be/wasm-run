@@ -81,17 +81,17 @@
 mod prebuilt_wasm_opt;
 
 use anyhow::{bail, Context, Result};
-use cargo_metadata::MetadataCommand;
-use cargo_metadata::{Metadata, Package};
+use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use fs_extra::dir;
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
 use std::fs;
+use std::io::BufReader;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
 use std::pin::Pin;
-use std::process::Command;
+use std::process::{Child, ChildStdout, Command, Stdio};
 use structopt::StructOpt;
 #[cfg(feature = "serve")]
 use tide::Server;
@@ -757,7 +757,7 @@ fn wasm_opt(
 
         let mut command = Command::new(&wasm_opt);
         command
-            .stderr(std::process::Stdio::inherit())
+            .stderr(Stdio::inherit())
             .args(&["-o", "-", "-O"])
             .args(&["-ol", &optimization_level.to_string()])
             .args(&["-s", &shrink_level.to_string()]);
@@ -803,6 +803,79 @@ fn wasm_opt(
     Ok(binary)
 }
 
+/// An extension for [`Package`] and for [`Metadata`] to run a cargo command a bit more easily.
+/// Ideal for scripting.
+pub trait PackageExt {
+    /// Run the cargo command in the package's directory if ran on a [`Package`] or in the
+    /// workspace root if ran on a [`Metadata`].
+    fn cargo(&self, builder: impl FnOnce(&mut Command)) -> Result<CargoChild>;
+}
+
+impl PackageExt for Package {
+    fn cargo(&self, builder: impl FnOnce(&mut Command)) -> Result<CargoChild> {
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(self.manifest_path.parent().unwrap())
+            .stdout(Stdio::piped());
+
+        builder(&mut command);
+
+        Ok(CargoChild(command.spawn()?))
+    }
+}
+
+impl PackageExt for Metadata {
+    fn cargo(&self, builder: impl FnOnce(&mut Command)) -> Result<CargoChild> {
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(&self.workspace_root)
+            .stdout(Stdio::piped());
+
+        builder(&mut command);
+
+        Ok(CargoChild(command.spawn()?))
+    }
+}
+
+/// A cargo child process.
+///
+/// The child process is killed and waited if the instance is dropped.
+pub struct CargoChild(Child);
+
+impl CargoChild {
+    /// Wait for the child process to finish and return an `Err(_)` if it didn't ended
+    /// successfully.
+    pub fn wait_success(&mut self) -> Result<()> {
+        let status = self.0.wait()?;
+
+        if let Some(code) = status.code() {
+            if !status.success() {
+                bail!("cargo exited with status: {}", code)
+            }
+        }
+
+        if !status.success() {
+            bail!("cargo exited with error")
+        }
+
+        Ok(())
+    }
+
+    /// Creates an iterator of Message from a Read outputting a stream of JSON messages. For usage
+    /// information, look at the top-level documentation of [`cargo_metadata`].
+    pub fn iter(&mut self) -> cargo_metadata::MessageIter<BufReader<ChildStdout>> {
+        let reader = BufReader::new(self.0.stdout.take().unwrap());
+        cargo_metadata::Message::parse_stream(reader)
+    }
+}
+
+impl Drop for CargoChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// The wasm-run Prelude
 ///
 /// The purpose of this module is to alleviate imports of many common types:
@@ -818,7 +891,7 @@ pub mod prelude {
     #[cfg(feature = "serve")]
     pub use async_std;
     pub use cargo_metadata;
-    pub use cargo_metadata::{Metadata, Package};
+    pub use cargo_metadata::{Message, Metadata, Package};
     pub use fs_extra;
     #[cfg(feature = "serve")]
     pub use futures;
@@ -832,6 +905,7 @@ pub mod prelude {
     pub use tide::Server;
 
     pub use super::{
-        BuildArgs, BuildProfile, DefaultBuildArgs, DefaultServeArgs, Hooks, ServeArgs,
+        BuildArgs, BuildProfile, CargoChild, DefaultBuildArgs, DefaultServeArgs, Hooks, PackageExt,
+        ServeArgs,
     };
 }
