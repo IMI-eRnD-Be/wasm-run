@@ -1,6 +1,14 @@
+//! ![Rust](https://github.com/IMI-eRnD-Be/wasm-run/workflows/main/badge.svg)
+//! [![Latest Version](https://img.shields.io/crates/v/wasm-run.svg)](https://crates.io/crates/wasm-run)
+//! [![Docs.rs](https://docs.rs/wasm-run/badge.svg)](https://docs.rs/wasm-run)
+//! [![LOC](https://tokei.rs/b1/github/IMI-eRnD-Be/wasm-run)](https://github.com/IMI-eRnD-Be/wasm-run)
+//! [![Dependency Status](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run/status.svg)](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run)
+//! ![License](https://img.shields.io/crates/l/wasm-run)
+//!
 //! # Synopsis
 //!
-//! Build tool that replaces `cargo run` to build WASM projects.
+//! Build tool that replaces `cargo run` to build WASM projects. Just like webpack, `wasm-run`
+//! offers a great deal of customization.
 //!
 //! To build your WASM project you normally need an external tool like `wasm-bindgen`, `wasm-pack`
 //! or `cargo-wasm`. `wasm-run` takes a different approach: it's a library that you install as a
@@ -30,6 +38,10 @@
 //!     during the development (any file change is also detected and it rebuilds and restart
 //!     automatically).
 //!
+//! # Usage
+//!
+//! All the details about the hooks can be find on the macro [`main`].
+//!
 //! # Additional Information
 //!
 //!  *  You can use this library to build examples in the `examples/` directory of your project.
@@ -43,6 +55,25 @@
 //!  *  You can add commands to the CLI by adding variants in the `enum`.
 //!  *  You can add parameters to the `Build` and `Serve` commands by overriding them. Please check
 //!     the documentation on the macro `main`.
+//!  *  If you run `cargo run -- serve --profiling`, the WASM will be optimized.
+//!
+//! # Features
+//!
+//!  *  `prebuilt-wasm-opt`: if you disable the default features and enable this feature, a binary
+//!     of wasm-opt will be downloaded from GitHub and used to optimize the WASM. By default,
+//!     wasm-opt is compiled among the dependencies (`binaryen`). This is useful if you run into
+//!     troubles for building `binaryen-sys`. (`binaryen` cannot be built on Netlify at the
+//!     moment.)
+//!  *  `sass`: support for SASS and SCSS. All SASS and SCSS files found in the directories
+//!     `styles/`, `assets/`, `sass/` and `css/` will be automatically transpiled to CSS and placed
+//!     in the build directory. This can be configured by overriding:
+//!     [`BuildArgs::build_sass_from_dir`], [`BuildArgs::sass_lookup_directories`],
+//!     [`BuildArgs::sass_options`] or completely overriden in the [`Hooks::post_build`] hook.
+//!     `sass-rs` is re-exported in the prelude of `wasm-run` for this purpose.
+//!  *  `full-restart`: when this feature is active, the command is entirely restarted when changes
+//!     are detected when serving files for development (`cargo run -- serve`). This is useful with
+//!     custom `serve` command that uses a custom backend and if you need to detect changes in the
+//!     backend code itself.
 
 #![warn(missing_docs)]
 
@@ -50,16 +81,17 @@
 mod prebuilt_wasm_opt;
 
 use anyhow::{bail, Context, Result};
-use cargo_metadata::MetadataCommand;
-use cargo_metadata::{Metadata, Package};
+use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
+use fs_extra::dir;
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
 use std::fs;
+use std::io::BufReader;
 use std::path::PathBuf;
 #[cfg(feature = "serve")]
 use std::pin::Pin;
-use std::process::Command;
+use std::process::{Child, ChildStdout, Command, Stdio};
 use structopt::StructOpt;
 #[cfg(feature = "serve")]
 use tide::Server;
@@ -74,6 +106,7 @@ const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/
 static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
 static PACKAGE: OnceCell<&Package> = OnceCell::new();
+static HOOKS: OnceCell<Hooks> = OnceCell::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// A build profile for the WASM.
@@ -91,6 +124,7 @@ pub enum BuildProfile {
 pub fn wasm_run_init(
     pkg_name: &str,
     default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
+    hooks: Hooks,
 ) -> Result<(&Metadata, &Package)> {
     let metadata = MetadataCommand::new()
         .exec()
@@ -123,6 +157,10 @@ pub fn wasm_run_init(
             metadata.workspace_root.join("build")
         })
         .expect("the cell is initially empty; qed");
+
+    if HOOKS.set(hooks).is_err() {
+        panic!("the cell is initially empty; qed");
+    }
 
     Ok((metadata, package))
 }
@@ -173,12 +211,104 @@ pub trait BuildArgs: Downcast {
     /// Create a profiling build. Enable optimizations and debug info.
     fn profiling(&self) -> bool;
 
+    /// Transpile SASS and SCSS files to CSS in the build directory.
+    #[cfg(feature = "sass")]
+    fn build_sass_from_dir(
+        &self,
+        input_dir: &std::path::Path,
+        options: sass_rs::Options,
+    ) -> Result<()> {
+        use walkdir::{DirEntry, WalkDir};
+
+        let build_path = self.build_path();
+
+        fn is_sass(entry: &DirEntry) -> bool {
+            matches!(
+                entry.path().extension().map(|x| x.to_str()).flatten(),
+                Some("sass") | Some("scss")
+            )
+        }
+
+        fn should_ignore(entry: &DirEntry) -> bool {
+            entry
+                .file_name()
+                .to_str()
+                .map(|x| x.starts_with("_"))
+                .unwrap_or(false)
+        }
+
+        let walker = WalkDir::new(&input_dir).into_iter();
+        for entry in walker
+            .filter_map(|x| match x {
+                Ok(x) => Some(x),
+                Err(err) => {
+                    eprintln!(
+                        "WARNING: could not walk into directory: `{}`",
+                        input_dir.display()
+                    );
+                    None
+                }
+            })
+            .filter(|x| x.path().is_file() && is_sass(x) && !should_ignore(x))
+        {
+            let file_path = entry.path();
+            let css_path = build_path
+                .join(file_path.strip_prefix(&input_dir).unwrap())
+                .with_extension("css");
+
+            match sass_rs::compile_file(file_path, options.clone()) {
+                Ok(css) => {
+                    let _ = fs::create_dir_all(css_path.parent().unwrap());
+                    fs::write(&css_path, css).with_context(|| {
+                        format!("could not write CSS to file `{}`", css_path.display())
+                    })?;
+                }
+                Err(err) => bail!(
+                    "could not convert SASS file `{}` to `{}`: {}",
+                    file_path.display(),
+                    css_path.display(),
+                    err,
+                ),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns a list of directories to lookup to transpile SASS and SCSS files to CSS.
+    #[cfg(feature = "sass")]
+    fn sass_lookup_directories(&self, _profile: BuildProfile) -> Vec<PathBuf> {
+        const STYLE_CANDIDATES: &[&str] = &["assets", "styles", "css", "sass"];
+
+        let package_path = self.package().manifest_path.parent().unwrap();
+
+        STYLE_CANDIDATES
+            .iter()
+            .map(|x| package_path.join(x))
+            .filter(|x| x.exists())
+            .collect()
+    }
+
+    /// Default profile to transpile SASS and SCSS files to CSS.
+    #[cfg(feature = "sass")]
+    fn sass_options(&self, profile: BuildProfile) -> sass_rs::Options {
+        sass_rs::Options {
+            output_style: match profile {
+                BuildProfile::Release | BuildProfile::Profiling => sass_rs::OutputStyle::Compressed,
+                _ => sass_rs::OutputStyle::Nested,
+            },
+            ..sass_rs::Options::default()
+        }
+    }
+
     /// Run the `build` command.
-    fn run(self, hooks: Hooks) -> Result<()>
+    fn run(self) -> Result<PathBuf>
     where
         Self: Sized + 'static,
     {
-        build(BuildProfile::Release, &self, &hooks)
+        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
+        build(BuildProfile::Release, &self, hooks)?;
+        Ok(self.build_path().to_owned())
     }
 }
 
@@ -238,25 +368,26 @@ pub trait ServeArgs: Downcast + Send {
     fn build_args(&self) -> &dyn BuildArgs;
 
     /// Run the `serve` command.
-    fn run(self, hooks: Hooks) -> Result<()>
+    fn run(self) -> Result<()>
     where
         Self: Sized + 'static,
     {
+        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
         // NOTE: the first step for serving is to call `build` a first time. The build directory
         //       must be present before we start watching files there.
-        build(BuildProfile::Dev, self.build_args(), &hooks)?;
+        build(BuildProfile::Dev, self.build_args(), hooks)?;
         #[cfg(feature = "serve")]
         {
             async_std::task::block_on(async {
-                let t1 = async_std::task::spawn(serve(&self, &hooks)?);
-                let t2 = async_std::task::spawn_blocking(move || watch(&self, &hooks));
+                let t1 = async_std::task::spawn(serve(&self, hooks)?);
+                let t2 = async_std::task::spawn_blocking(move || watch(&self, hooks));
                 futures::try_join!(t1, t2)?;
                 Ok(())
             })
         }
         #[cfg(not(feature = "serve"))]
         {
-            watch(&self, &hooks)
+            watch(&self, hooks)
         }
     }
 }
@@ -285,22 +416,33 @@ impl ServeArgs for DefaultServeArgs {
 }
 
 /// Hooks.
+///
+/// Check the code of [`Hooks::default()`] implementation to see what they do by default.
+///
+/// If you don't provide your own hook, the default code will be executed. But if you do provide a
+/// hook, the code will be *replaced*.
 pub struct Hooks {
-    /// This hook will be run before the WASM is optimized.
+    /// This hook will be run before the WASM is compiled. It does nothing by default.
+    /// You can tweak the command-line arguments of the build command here or create additional
+    /// files in the build directory.
     pub pre_build:
         Box<dyn Fn(&dyn BuildArgs, BuildProfile, &mut Command) -> Result<()> + Send + Sync>,
 
-    /// This hook will be run after the WASM is optimized.
+    /// This hook will be run after the WASM is compiled and optimized.
+    /// By default it copies the static files to the build directory.
     #[allow(clippy::type_complexity)]
     pub post_build:
         Box<dyn Fn(&dyn BuildArgs, BuildProfile, String, Vec<u8>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before running the HTTP server.
+    /// By default it will add routes to the files in the build directory.
     #[cfg(feature = "serve")]
     #[allow(clippy::type_complexity)]
     pub serve: Box<dyn Fn(&dyn ServeArgs, &mut Server<()>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before starting to watch for changes in files.
+    /// By default it will add all the `src/` directories and `Cargo.toml` files of all the crates
+    /// in the workspace plus the `static/` directory if it exists in the frontend crate.
     pub watch: Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
 }
 
@@ -315,6 +457,7 @@ impl Default for Hooks {
                 let metadata = args.build_args().metadata();
 
                 let _ = watcher.watch("index.html", RecursiveMode::Recursive);
+                let _ = watcher.watch("static", RecursiveMode::Recursive);
 
                 let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
@@ -329,24 +472,68 @@ impl Default for Hooks {
                 Ok(())
             }),
             pre_build: Box::new(|_, _, _| Ok(())),
-            post_build: Box::new(|args, _, wasm_js, wasm_bin| {
-                let build_path = args.build_path();
-                let index_path = build_path.join("index.html");
+            post_build: Box::new(
+                |args, #[allow(unused_variables)] profile, wasm_js, wasm_bin| {
+                    let build_path = args.build_path();
+                    let wasm_js_path = build_path.join("app.js");
+                    let wasm_bin_path = build_path.join("app_bg.wasm");
 
-                if fs::copy("index.html", &index_path).is_err() {
-                    fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
-                        format!(
-                            "could not copy index.html nor write default to `{}`",
-                            index_path.display()
-                        )
+                    fs::write(&wasm_js_path, wasm_js).with_context(|| {
+                        format!("could not write JS file to `{}`", wasm_js_path.display())
                     })?;
-                }
-                fs::write(args.build_path().join("app.js"), wasm_js)?;
-                fs::write(build_path.join("app_bg.wasm"), wasm_bin)
-                    .context("could not write WASM file")?;
+                    fs::write(&wasm_bin_path, wasm_bin).with_context(|| {
+                        format!("could not write WASM file to `{}`", wasm_bin_path.display())
+                    })?;
 
-                Ok(())
-            }),
+                    let index_path = build_path.join("index.html");
+                    let static_dir = args
+                        .package()
+                        .manifest_path
+                        .parent()
+                        .unwrap()
+                        .join("static");
+
+                    if index_path.exists() {
+                        fs::copy("index.html", &index_path).context(format!(
+                            "could not copy index.html to `{}`",
+                            index_path.display()
+                        ))?;
+                    } else if static_dir.exists() {
+                        dir::copy(
+                            &static_dir,
+                            &build_path,
+                            &dir::CopyOptions {
+                                content_only: true,
+                                ..dir::CopyOptions::new()
+                            },
+                        )
+                        .with_context(|| {
+                            format!(
+                                "could not copy content of directory static: `{}` to `{}`",
+                                static_dir.display(),
+                                build_path.display()
+                            )
+                        })?;
+                    } else {
+                        fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
+                            format!(
+                                "could not write default index.html to `{}`",
+                                index_path.display()
+                            )
+                        })?;
+                    }
+
+                    #[cfg(feature = "sass")]
+                    {
+                        let options = args.sass_options(profile);
+                        for style_path in args.sass_lookup_directories(profile) {
+                            args.build_sass_from_dir(&style_path, options.clone())?;
+                        }
+                    }
+
+                    Ok(())
+                },
+            ),
             #[cfg(feature = "serve")]
             serve: Box::new(|args, server| {
                 use tide::{Body, Response};
@@ -373,6 +560,15 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     }
 
     let package = args.package();
+
+    let build_path = args.build_path();
+    let _ = fs::remove_dir_all(build_path);
+    fs::create_dir_all(build_path).with_context(|| {
+        format!(
+            "could not create build directory `{}`",
+            build_path.display()
+        )
+    })?;
 
     let mut command = Command::new("cargo");
 
@@ -402,15 +598,6 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             bail!("build process has been terminated by a signal");
         }
     }
-
-    let build_path = args.build_path();
-    let _ = fs::remove_dir_all(build_path);
-    fs::create_dir_all(build_path).with_context(|| {
-        format!(
-            "could not create build directory `{}`",
-            build_path.display()
-        )
-    })?;
 
     let wasm_path = args
         .metadata()
@@ -579,7 +766,7 @@ fn wasm_opt(
 
         let mut command = Command::new(&wasm_opt);
         command
-            .stderr(std::process::Stdio::inherit())
+            .stderr(Stdio::inherit())
             .args(&["-o", "-", "-O"])
             .args(&["-ol", &optimization_level.to_string()])
             .args(&["-s", &shrink_level.to_string()]);
@@ -625,6 +812,79 @@ fn wasm_opt(
     Ok(binary)
 }
 
+/// An extension for [`Package`] and for [`Metadata`] to run a cargo command a bit more easily.
+/// Ideal for scripting.
+pub trait PackageExt {
+    /// Run the cargo command in the package's directory if ran on a [`Package`] or in the
+    /// workspace root if ran on a [`Metadata`].
+    fn cargo(&self, builder: impl FnOnce(&mut Command)) -> Result<CargoChild>;
+}
+
+impl PackageExt for Package {
+    fn cargo(&self, builder: impl FnOnce(&mut Command)) -> Result<CargoChild> {
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(self.manifest_path.parent().unwrap())
+            .stdout(Stdio::piped());
+
+        builder(&mut command);
+
+        Ok(CargoChild(command.spawn()?))
+    }
+}
+
+impl PackageExt for Metadata {
+    fn cargo(&self, builder: impl FnOnce(&mut Command)) -> Result<CargoChild> {
+        let mut command = Command::new("cargo");
+        command
+            .current_dir(&self.workspace_root)
+            .stdout(Stdio::piped());
+
+        builder(&mut command);
+
+        Ok(CargoChild(command.spawn()?))
+    }
+}
+
+/// A cargo child process.
+///
+/// The child process is killed and waited if the instance is dropped.
+pub struct CargoChild(Child);
+
+impl CargoChild {
+    /// Wait for the child process to finish and return an `Err(_)` if it didn't ended
+    /// successfully.
+    pub fn wait_success(&mut self) -> Result<()> {
+        let status = self.0.wait()?;
+
+        if let Some(code) = status.code() {
+            if !status.success() {
+                bail!("cargo exited with status: {}", code)
+            }
+        }
+
+        if !status.success() {
+            bail!("cargo exited with error")
+        }
+
+        Ok(())
+    }
+
+    /// Creates an iterator of Message from a Read outputting a stream of JSON messages. For usage
+    /// information, look at the top-level documentation of [`cargo_metadata`].
+    pub fn iter(&mut self) -> cargo_metadata::MessageIter<BufReader<ChildStdout>> {
+        let reader = BufReader::new(self.0.stdout.take().unwrap());
+        cargo_metadata::Message::parse_stream(reader)
+    }
+}
+
+impl Drop for CargoChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// The wasm-run Prelude
 ///
 /// The purpose of this module is to alleviate imports of many common types:
@@ -640,17 +900,21 @@ pub mod prelude {
     #[cfg(feature = "serve")]
     pub use async_std;
     pub use cargo_metadata;
-    pub use cargo_metadata::{Metadata, Package};
+    pub use cargo_metadata::{Message, Metadata, Package};
+    pub use fs_extra;
     #[cfg(feature = "serve")]
     pub use futures;
     pub use notify;
     pub use notify::RecommendedWatcher;
+    #[cfg(feature = "sass")]
+    pub use sass_rs;
     #[cfg(feature = "serve")]
     pub use tide;
     #[cfg(feature = "serve")]
     pub use tide::Server;
 
     pub use super::{
-        BuildArgs, BuildProfile, DefaultBuildArgs, DefaultServeArgs, Hooks, ServeArgs,
+        BuildArgs, BuildProfile, CargoChild, DefaultBuildArgs, DefaultServeArgs, Hooks, PackageExt,
+        ServeArgs,
     };
 }

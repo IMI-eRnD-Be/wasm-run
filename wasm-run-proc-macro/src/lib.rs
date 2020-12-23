@@ -42,16 +42,25 @@ use syn::{parse_macro_input, ItemEnum};
 ///
 /// # Example
 ///
+/// Please note that all the code showed here is mostly the actual code for the default hooks.
+/// This means that if you don't provide your own hook, this code will be executed. But if you do
+/// provide a hook, the code will be *replaced*.
+///
 /// ```
-/// use anyhow::Result;
+/// use anyhow::{Context, Result};      // anyhow is provided by `wasm_run::prelude::*`
+/// use fs_extra::dir;                  // fs_extra is provided by `wasm_run::prelude::*`
 /// use std::fs;
 /// use std::path::PathBuf;
-/// use structopt::StructOpt;
+/// use structopt::StructOpt;           // due to limitation, this does *not* come from the prelude
 /// use wasm_run::prelude::*;
+///
+/// const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
 ///
 /// /// Makes an entrypoint to your binary.
 /// #[wasm_run::main(
 ///     "basic",
+///     build_args = BuildCommand,
+///     serve_args = ServeCommand,
 ///     other_cli_commands = run_other_cli_commands,
 ///     pre_build = pre_build,
 ///     post_build = post_build,
@@ -61,8 +70,6 @@ use syn::{parse_macro_input, ItemEnum};
 /// )]
 /// #[derive(StructOpt, Debug)]
 /// enum Cli {
-///     Build(BuildCommand),
-///     Serve(ServeCommand),
 ///     Hello,
 /// }
 ///
@@ -114,7 +121,6 @@ use syn::{parse_macro_input, ItemEnum};
 /// /// This function is called if you have added new commands to the enum.
 /// fn run_other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> Result<()> {
 ///     match cli {
-///         Cli::Build(_) | Cli::Serve(_) => unreachable!(),
 ///         Cli::Hello => println!("Hello World!"),
 ///     }
 ///
@@ -129,6 +135,7 @@ use syn::{parse_macro_input, ItemEnum};
 /// ) -> Result<()> {
 ///     let _i = args.i;
 ///
+///     // NOTE: this is an example, this hook has no default code.
 ///     command
 ///         .arg("--no-default-features")
 ///         .env("RUSTFLAGS", "-Zmacro-backtrace");
@@ -143,15 +150,62 @@ use syn::{parse_macro_input, ItemEnum};
 ///     wasm_js: String,
 ///     wasm_bin: Vec<u8>,
 /// ) -> Result<()> {
-///     let _i = args.i;
-///
 ///     let build_path = args.build_path();
-///     fs::write(build_path.join("app.js"), wasm_js)?;
-///     fs::write(build_path.join("app_bg.wasm"), wasm_bin)?;
-///     fs::write(
-///         build_path.join("index.html"),
-///         "<html><body>Custom index.html</body>",
-///     )?;
+///     let wasm_js_path = build_path.join("app.js");
+///     let wasm_bin_path = build_path.join("app_bg.wasm");
+///
+///     fs::write(&wasm_js_path, wasm_js).with_context(|| {
+///         format!("could not write JS file to `{}`", wasm_js_path.display())
+///     })?;
+///     fs::write(&wasm_bin_path, wasm_bin).with_context(|| {
+///         format!("could not write WASM file to `{}`", wasm_bin_path.display())
+///     })?;
+///
+///     let index_path = build_path.join("index.html");
+///     let static_dir = args
+///         .package()
+///         .manifest_path
+///         .parent()
+///         .unwrap()
+///         .join("static");
+///
+///     if index_path.exists() {
+///         fs::copy("index.html", &index_path).context(format!(
+///             "could not copy index.html to `{}`",
+///             index_path.display()
+///         ))?;
+///     } else if static_dir.exists() {
+///         dir::copy(
+///             &static_dir,
+///             &build_path,
+///             &dir::CopyOptions {
+///                 content_only: true,
+///                 ..dir::CopyOptions::new()
+///             },
+///         )
+///         .with_context(|| {
+///             format!(
+///                 "could not copy content of directory static: `{}` to `{}`",
+///                 static_dir.display(),
+///                 build_path.display()
+///             )
+///         })?;
+///     } else {
+///         fs::write(&index_path, DEFAULT_INDEX).with_context(|| {
+///             format!(
+///                 "could not write default index.html to `{}`",
+///                 index_path.display()
+///             )
+///         })?;
+///     }
+///
+///     #[cfg(feature = "sass")]
+///     {
+///         let options = args.sass_options(profile);
+///         for style_path in args.sass_lookup_directories() {
+///             args.build_sass_from_dir(&style_path, options.clone())?;
+///         }
+///     }
 ///
 ///     Ok(())
 /// }
@@ -213,6 +267,6 @@ pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
         .expect("could not get metadata");
 
     main_generator::generate(item, attr, &metadata)
-        .unwrap()
+        .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
