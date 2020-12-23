@@ -3,17 +3,10 @@ use cargo_metadata::Metadata;
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::ItemEnum;
+use syn::{Error, ItemEnum};
 
 pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<TokenStream> {
-    let ItemEnum {
-        attrs,
-        vis,
-        ident,
-        generics,
-        variants,
-        ..
-    } = item;
+    let ident = &item.ident;
     let Attr {
         other_cli_commands,
         #[cfg(not(feature = "serve"))]
@@ -28,6 +21,15 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         build_args,
         serve_args,
     } = attr;
+
+    if let Some(serve_args) = serve_args.as_ref() {
+        if build_args.is_none() {
+            return Err(Error::new(
+                serve_args.span(),
+                "if you use a custom ServeArgs, you must use a custom BuildArgs",
+            ));
+        }
+    }
 
     let build_ty = if let Some(ty) = build_args {
         quote! { #ty }
@@ -57,12 +59,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             }
         })
         .unwrap_or_else(|| {
-            if variants
-                .iter()
-                .filter(|x| x.ident != "Build" && x.ident != "Serve")
-                .count()
-                > 0
-            {
+            if !item.variants.is_empty() {
                 quote! {
                     cli => compile_error!(
                         "missing `other_cli_commands` to handle all the variants",
@@ -120,7 +117,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         }
     });
 
-    let mut check_package_existence = quote! {};
     if let Some(pkg_name) = pkg_name.as_ref() {
         let span = pkg_name.span();
         let pkg_name = pkg_name.value();
@@ -130,8 +126,10 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             .find(|x| x.name == pkg_name)
             .is_none()
         {
-            let message = format!("package `{}` not found", pkg_name);
-            check_package_existence = quote_spanned! {span=> compile_error!(#message); };
+            return Err(Error::new(
+                span,
+                format!("package `{}` not found", pkg_name),
+            ));
         }
     }
 
@@ -167,12 +165,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     };
 
     Ok(quote! {
-        #check_package_existence
-
-        #( #attrs )*
-        #vis enum #ident #generics {
-            #variants
-        }
+        #item
 
         impl #ident {
             #[allow(clippy::needless_update)]

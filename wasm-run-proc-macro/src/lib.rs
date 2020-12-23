@@ -267,6 +267,6 @@ pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
         .expect("could not get metadata");
 
     main_generator::generate(item, attr, &metadata)
-        .unwrap()
+        .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
