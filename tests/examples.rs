@@ -23,6 +23,7 @@ fn build_example_crates() {
     let examples = Path::new("examples");
     run_cargo(&examples.join("basic"), &["build"]);
     run_cargo(&examples.join("backend-and-frontend"), &["build"]);
+    #[cfg(target_os = "linux")]
     run_cargo(
         &examples.join("backend-and-frontend"),
         &["run", "-p", "frontend", "--", "build-container-image"],
