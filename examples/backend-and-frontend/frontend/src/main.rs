@@ -5,46 +5,35 @@ use std::process::Command;
 use structopt::StructOpt;
 use wasm_run::prelude::*;
 
-#[wasm_run::main(run_server = run, other_cli_commands = other_cli_commands)]
+#[wasm_run::main(run_server, other_cli_commands)]
 #[derive(StructOpt, Debug)]
 enum Cli {
     BuildContainerImage,
 }
 
-fn run(_args: DefaultServeArgs) -> anyhow::Result<()> {
+fn run_server(_args: DefaultServeArgs) -> anyhow::Result<()> {
     Err(backend::run().into())
 }
 
-fn other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> anyhow::Result<()> {
+fn other_cli_commands(cli: Cli, metadata: &Metadata, _package: &Package) -> anyhow::Result<()> {
     match cli {
-        Cli::Serve(_) | Cli::Build(_) | Cli::RunServer(_) => unreachable!(),
         Cli::BuildContainerImage => {
             println!("Building frontend...");
-
-            let status = Command::new("cargo")
-                .args(&["run", "--", "build"])
-                .status()
-                .unwrap();
-            if !status.success() {
-                anyhow::bail!("failed to compile frontend");
-            }
+            Cli::build()?;
 
             println!("Building backend...");
-
-            let status = Command::new("cargo")
-                .args(&[
-                    "build",
-                    "--release",
-                    "-p",
-                    "backend",
-                    "--target",
-                    "x86_64-unknown-linux-musl",
-                ])
-                .status()
-                .unwrap();
-            if !status.success() {
-                anyhow::bail!("failed to compile backend");
-            }
+            metadata
+                .cargo(|command| {
+                    command.args(&[
+                        "build",
+                        "--release",
+                        "-p",
+                        "backend",
+                        "--target",
+                        "x86_64-unknown-linux-musl",
+                    ]);
+                })?
+                .wait_success()?;
 
             println!("Building container image...");
 
