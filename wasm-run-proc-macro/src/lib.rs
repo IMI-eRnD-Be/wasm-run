@@ -59,6 +59,8 @@ use syn::{parse_macro_input, ItemEnum};
 /// /// Makes an entrypoint to your binary.
 /// #[wasm_run::main(
 ///     "basic",
+///     build_args = BuildCommand,
+///     serve_args = ServeCommand,
 ///     other_cli_commands = run_other_cli_commands,
 ///     pre_build = pre_build,
 ///     post_build = post_build,
@@ -68,8 +70,6 @@ use syn::{parse_macro_input, ItemEnum};
 /// )]
 /// #[derive(StructOpt, Debug)]
 /// enum Cli {
-///     Build(BuildCommand),
-///     Serve(ServeCommand),
 ///     Hello,
 /// }
 ///
@@ -121,7 +121,6 @@ use syn::{parse_macro_input, ItemEnum};
 /// /// This function is called if you have added new commands to the enum.
 /// fn run_other_cli_commands(cli: Cli, _metadata: &Metadata, _package: &Package) -> Result<()> {
 ///     match cli {
-///         Cli::Build(_) | Cli::Serve(_) => unreachable!(),
 ///         Cli::Hello => println!("Hello World!"),
 ///     }
 ///
