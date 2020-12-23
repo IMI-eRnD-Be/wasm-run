@@ -36,6 +36,9 @@ fn run_test_crates() {
         "test for `crate-name-vs-pkg-name` failed"
     );
 
+    let crate_path = tests.join("test-cargo-helper");
+    run_crate(&crate_path, &["test"]);
+
     let crate_path = tests.join("test-default-build-path");
     let build_path = crate_path.join("public");
     let _ = fs::remove_dir_all(&build_path);
