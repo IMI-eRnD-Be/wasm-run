@@ -39,7 +39,7 @@ fn other_cli_commands(cli: Cli, metadata: &Metadata, _package: &Package) -> anyh
 
             let dockerfile = Path::new("Dockerfile");
             let mut f = fs::File::create(&dockerfile)?;
-            writeln!(f, "FROM gcr.io/distroless/cc")?;
+            writeln!(f, "FROM gcr.io/distroless/static")?;
             writeln!(
                 f,
                 "ADD target/x86_64-unknown-linux-musl/release/backend /backend"

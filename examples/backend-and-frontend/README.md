@@ -15,7 +15,7 @@ Building backend...
     Finished release [optimized] target(s) in 0.97s
 Building container image...
 Sending build context to Docker daemon  6.173MB
-Step 1/4 : FROM gcr.io/distroless/cc
+Step 1/4 : FROM gcr.io/distroless/static
  ---> b5f53c952b8e
 Step 2/4 : ADD target/x86_64-unknown-linux-musl/release/backend /backend
  ---> Using cache
