@@ -709,7 +709,7 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
         match rx.recv() {
             Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
-                #[cfg(all(feature = "full-restart", unix, not(serve)))]
+                #[cfg(all(feature = "full-restart", unix, not(feature = "serve")))]
                 {
                     use std::os::unix::process::CommandExt;
 
@@ -722,7 +722,7 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
                         .exec();
                     eprintln!("could not restart process: {}", err);
                 }
-                #[cfg(not(all(feature = "full-restart", unix, not(serve))))]
+                #[cfg(not(all(feature = "full-restart", unix, not(feature = "serve"))))]
                 {
                     if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
                         eprintln!("{}", err);
