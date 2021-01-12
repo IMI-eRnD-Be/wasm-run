@@ -46,11 +46,11 @@ fn run_test_crates() {
     assert!(build_path.exists(), "test for `default_build_path` failed");
     assert!(build_path.join("fancy.css").exists());
 
-    let crate_path = tests.join("test-prebuilt-wasm-opt");
+    let crate_path = tests.join("test-binaryen");
     let build_path = crate_path.join("build");
     let _ = fs::remove_dir_all(&build_path);
     run_crate(&crate_path, &["build"]);
-    assert!(build_path.exists(), "test for `prebuilt-wasm-opt` failed");
+    assert!(build_path.exists(), "test for `binaryen` failed");
 
     let crate_path = tests.join("test-no-serve");
     let build_path = crate_path.join("build");

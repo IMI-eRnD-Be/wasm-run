@@ -1,5 +1,5 @@
 [package]
-name = "test-prebuilt-wasm-opt"
+name = "test-binaryen"
 version = "0.1.0"
 authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
 edition = "2018"
@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 wasm-bindgen = "^0.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-wasm-run = { path = "../..", features = ["prebuilt-wasm-opt", "serve"], default-features = false }
+wasm-run = { path = "../..", features = ["binaryen", "serve"], default-features = false }
 structopt = "0.3"
 
 [workspace]
