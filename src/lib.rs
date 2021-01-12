@@ -794,9 +794,8 @@ fn wasm_opt(
         {
             use std::io::{Seek, SeekFrom, Write};
 
-            let mut binary = binary;
             let mut file = tempfile::tempfile()?;
-            file.write(&mut binary)?;
+            file.write_all(&binary)?;
             file.seek(SeekFrom::Start(0))?;
             command.stdin(file);
         }
