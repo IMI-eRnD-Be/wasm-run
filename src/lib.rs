@@ -458,6 +458,7 @@ impl Default for Hooks {
 
                 let _ = watcher.watch("index.html", RecursiveMode::Recursive);
                 let _ = watcher.watch("static", RecursiveMode::Recursive);
+                let _ = watcher.watch("build.rs", RecursiveMode::Recursive);
 
                 let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
