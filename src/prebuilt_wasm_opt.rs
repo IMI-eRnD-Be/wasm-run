@@ -1,11 +1,9 @@
 use anyhow::{Context, Result};
 use binary_install::Cache;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-pub(crate) fn install_wasm_opt() -> Result<PathBuf> {
-    let cache = Cache::new(env!("CARGO_PKG_NAME"))
-        .map_err(|err| err.compat())
-        .context("could not initialize cache")?;
+pub(crate) fn install_wasm_opt(target_path: impl AsRef<Path>) -> Result<PathBuf> {
+    let cache = Cache::at(target_path.as_ref());
 
     let url = format!(
         "https://github.com/WebAssembly/binaryen/releases/download/version_{version}/binaryen-version_{version}-{arch}-{os}.tar.gz",

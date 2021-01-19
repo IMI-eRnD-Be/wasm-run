@@ -88,7 +88,7 @@ use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
 use std::fs;
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(feature = "serve")]
 use std::pin::Pin;
 use std::process::{Child, ChildStdout, Command, Stdio};
@@ -601,8 +601,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     }
 
     let wasm_path = args
-        .metadata()
-        .target_directory
+        .target_path()
         .join("wasm32-unknown-unknown")
         .join(match profile {
             BuildProfile::Profiling => "release",
@@ -624,8 +623,8 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     let wasm_bin = output.wasm_mut().emit_wasm();
 
     let wasm_bin = match profile {
-        BuildProfile::Profiling => wasm_opt(wasm_bin, 0, 2, true)?,
-        BuildProfile::Release => wasm_opt(wasm_bin, 1, 2, false)?,
+        BuildProfile::Profiling => wasm_opt(wasm_bin, 0, 2, true, args.target_path())?,
+        BuildProfile::Release => wasm_opt(wasm_bin, 1, 2, false, args.target_path())?,
         BuildProfile::Dev => wasm_bin,
     };
 
@@ -747,6 +746,7 @@ fn wasm_opt(
     shrink_level: u32,
     optimization_level: u32,
     debug_info: bool,
+    target_path: impl AsRef<Path>,
 ) -> Result<Vec<u8>> {
     #[cfg(feature = "binaryen")]
     return match binaryen::Module::read(&binary) {
@@ -763,7 +763,7 @@ fn wasm_opt(
 
     #[cfg(feature = "prebuilt-wasm-opt")]
     return {
-        let wasm_opt = prebuilt_wasm_opt::install_wasm_opt()?;
+        let wasm_opt = prebuilt_wasm_opt::install_wasm_opt(target_path)?;
 
         let mut command = Command::new(&wasm_opt);
         command
