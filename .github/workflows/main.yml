@@ -24,8 +24,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      - uses: Swatinem/rust-cache@v1
-
       - name: cargo test
         uses: actions-rs/cargo@v1
         with:
