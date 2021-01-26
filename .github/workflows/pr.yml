@@ -14,28 +14,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v2
 
-      - name: Get main commit hash
-        id: main_commit
-        run: echo "::set-output name=hash::$(git rev-parse origin/main)"
+      - uses: Swatinem/rust-cache@v1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
-
-      - name: Cache target, rustup and cargo registry
-        id: cache-target
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/bin
-            target
-            **/target
-          key: ${{ github.event.issue.number }}-${{ runner.os }}-pr
-          restore-keys: main-${{ steps.main_commit.outputs.hash }}
 
       - name: cargo test
         uses: actions-rs/cargo@v1
@@ -62,6 +47,8 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v2
 
+      - uses: Swatinem/rust-cache@v1
+
       - name: Install target wasm32-unknown-unknown
         uses: actions-rs/toolchain@v1
         with:
@@ -80,6 +67,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
+
+      - uses: Swatinem/rust-cache@v1
 
       - name: Install target wasm32-unknown-unknown
         uses: actions-rs/toolchain@v1
