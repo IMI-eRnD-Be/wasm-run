@@ -12,10 +12,6 @@ use syn::{parse_macro_input, ItemEnum};
 /// It requires to be used with `structopt` on an `enum`. Please consult the documentation of
 /// `structopt` if you don't know how to make an `enum` with it.
 ///
-/// By default it provides a command `Build` and a command `Serve` which you can override simply by
-/// providing them manually. Otherwise it uses the defaults (`DefaultBuildArgs` and
-/// `DefaultServeArgs`).
-///
 /// There are a number of named arguments you can provide to the macro:
 ///  -  `other_cli_commands`: a function that is called if you have added new commands to the
 ///     `enum`;
@@ -31,7 +27,11 @@ use syn::{parse_macro_input, ItemEnum};
 ///     run the HTTP server;
 ///  -  `default_build_path`: a function that is called that provides the default directory path
 ///     when the user didn't provide it through the command-line arguments (the default is
-///     `workspace root/build`).
+///     `workspace root/build`);
+///  -  `build_args`: allow you to override the `build` command when providing a custom argument
+///     (the default is `DefaultBuildArgs`);
+///  -  `serve_args`: allow you to override the `serve` command when providing a custom argument
+///     (the default is `DefaultServeArgs`).
 ///
 /// You can also change the package that is built by providing its name in the first positional
 /// argument:
