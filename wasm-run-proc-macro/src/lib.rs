@@ -32,8 +32,10 @@ use syn::{parse_macro_input, ItemEnum};
 ///  -  `default_build_path`: a function that is called that provides the default directory path
 ///     when the user didn't provide it through the command-line arguments (the default is
 ///     `workspace root/build`).
-///  -  `build_args`: Allow you to override the `build` command when providing a custom argument
-///  -  `serve_args`: Allow you to override the `serve` command when providing a custom argument
+///  -  `build_args`: Allow you to override the `build` command when providing a custom argument,
+///     it replaces `DefaultBuildArgs`.
+///  -  `serve_args`: Allow you to override the `serve` command when providing a custom argument,
+///     it replaces `DefaultServeArgs`.
 ///
 /// You can also change the package that is built by providing its name in the first positional
 /// argument:
