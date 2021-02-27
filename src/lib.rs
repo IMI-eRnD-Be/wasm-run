@@ -115,7 +115,7 @@ static PACKAGE: OnceCell<&Package> = OnceCell::new();
 static HOOKS: OnceCell<Hooks> = OnceCell::new();
 
 /// Provides a global logger
-pub static LOGGING: Lazy<Logger> = Lazy::new(|| {
+pub static LOGGER: Lazy<Logger> = Lazy::new(|| {
     TerminalLoggerBuilder::new()
         .level(Severity::Debug)
         .format(Format::Compact)
@@ -260,7 +260,7 @@ pub trait BuildArgs: Downcast {
                 Ok(x) => Some(x),
                 Err(_err) => {
                     warn!(
-                        LOGGING,
+                        LOGGER,
                         "could not walk into directory: `{}`",
                         input_dir.display()
                     );
@@ -316,7 +316,7 @@ pub trait BuildArgs: Downcast {
             .join(" ,");
 
         debug!(
-            LOGGING,
+            LOGGER,
             "Looking SASS files in directories: {}", dirs_to_print
         );
 
@@ -626,10 +626,10 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Dev => &[],
         });
 
-    info!(LOGGING, "Running pre-build hook");
+    info!(LOGGER, "Running pre-build hook");
     (hooks.pre_build)(args, profile, &mut command)?;
 
-    info!(LOGGING, "Building WASM bundle");
+    info!(LOGGER, "Building WASM bundle");
     let status = command.status().context("could not start build process")?;
 
     if !status.success() {
@@ -651,7 +651,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         .join(package.name.replace("-", "_"))
         .with_extension("wasm");
 
-    info!(LOGGING, "Running bindgen");
+    info!(LOGGER, "Running bindgen");
     let mut output = Bindgen::new()
         .input_path(wasm_path)
         .web(true)
@@ -669,7 +669,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         BuildProfile::Dev => wasm_bin,
     };
 
-    info!(LOGGING, "Running post-build hook");
+    info!(LOGGER, "Running post-build hook");
     (hooks.post_build)(args, profile, wasm_js, wasm_bin)?;
 
     Ok(())
@@ -690,7 +690,7 @@ fn serve(
     (hooks.serve)(args, &mut app)?;
 
     info!(
-        LOGGING,
+        LOGGER,
         "Development server started: http://{}:{}",
         args.ip(),
         args.port()
@@ -709,7 +709,7 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
     let (tx, rx) = channel();
 
-    info!(LOGGING, "Initializing watcher");
+    info!(LOGGER, "Initializing watcher");
 
     let mut watcher: RecommendedWatcher =
         Watcher::new(tx, Duration::from_secs(2)).context("could not initialize watcher")?;
@@ -854,7 +854,7 @@ fn wasm_opt(
         Ok(output.stdout)
     };
 
-    warn!(LOGGING, "No optimization has been done on the WASM");
+    warn!(LOGGER, "No optimization has been done on the WASM");
     Ok(binary)
 }
 
@@ -963,7 +963,7 @@ pub mod prelude {
     pub use slog::{debug, error, info, warn};
     // pub use sloggers;
 
-    pub use super::LOGGING;
+    pub use super::LOGGER;
 
     pub use super::{
         BuildArgs, BuildProfile, CargoChild, DefaultBuildArgs, DefaultServeArgs, Hooks, PackageExt,
