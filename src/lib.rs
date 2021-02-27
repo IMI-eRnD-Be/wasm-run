@@ -85,7 +85,13 @@ use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use fs_extra::dir;
 use notify::RecommendedWatcher;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
+use slog::{debug, info, warn, Logger};
+use sloggers::{
+    terminal::{Destination, TerminalLoggerBuilder},
+    types::{Format, Severity, SourceLocation},
+    Build,
+};
 use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -107,6 +113,17 @@ static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
 static PACKAGE: OnceCell<&Package> = OnceCell::new();
 static HOOKS: OnceCell<Hooks> = OnceCell::new();
+
+/// Provides a global logger
+pub static LOGGING: Lazy<Logger> = Lazy::new(|| {
+    TerminalLoggerBuilder::new()
+        .level(Severity::Debug)
+        .format(Format::Compact)
+        .source_location(SourceLocation::None)
+        .destination(Destination::Stderr)
+        .build()
+        .unwrap()
+});
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// A build profile for the WASM.
@@ -241,9 +258,10 @@ pub trait BuildArgs: Downcast {
         for entry in walker
             .filter_map(|x| match x {
                 Ok(x) => Some(x),
-                Err(err) => {
-                    eprintln!(
-                        "WARNING: could not walk into directory: `{}`",
+                Err(_err) => {
+                    warn!(
+                        LOGGING,
+                        "could not walk into directory: `{}`",
                         input_dir.display()
                     );
                     None
@@ -281,12 +299,28 @@ pub trait BuildArgs: Downcast {
         const STYLE_CANDIDATES: &[&str] = &["assets", "styles", "css", "sass"];
 
         let package_path = self.package().manifest_path.parent().unwrap();
-
-        STYLE_CANDIDATES
+        let directories: Vec<PathBuf> = STYLE_CANDIDATES
             .iter()
             .map(|x| package_path.join(x))
             .filter(|x| x.exists())
-            .collect()
+            .collect();
+
+        let dirs_to_print = directories
+            .iter()
+            .map(|path| {
+                path.file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("Non UTF-8 directory name")
+            })
+            .collect::<Vec<&str>>()
+            .join(" ,");
+
+        debug!(
+            LOGGING,
+            "Looking SASS files in directories: {}", dirs_to_print
+        );
+
+        directories
     }
 
     /// Default profile to transpile SASS and SCSS files to CSS.
@@ -579,6 +613,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     command
         .args(&[
             "build",
+            "--quiet",
             "--lib",
             "--target",
             "wasm32-unknown-unknown",
@@ -591,8 +626,10 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Dev => &[],
         });
 
+    info!(LOGGING, "Running pre-build hook");
     (hooks.pre_build)(args, profile, &mut command)?;
 
+    info!(LOGGING, "Building WASM bundle");
     let status = command.status().context("could not start build process")?;
 
     if !status.success() {
@@ -614,6 +651,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         .join(package.name.replace("-", "_"))
         .with_extension("wasm");
 
+    info!(LOGGING, "Running bindgen");
     let mut output = Bindgen::new()
         .input_path(wasm_path)
         .web(true)
@@ -631,6 +669,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         BuildProfile::Dev => wasm_bin,
     };
 
+    info!(LOGGING, "Running post-build hook");
     (hooks.post_build)(args, profile, wasm_js, wasm_bin)?;
 
     Ok(())
@@ -650,7 +689,8 @@ fn serve(
 
     (hooks.serve)(args, &mut app)?;
 
-    eprintln!(
+    info!(
+        LOGGING,
         "Development server started: http://{}:{}",
         args.ip(),
         args.port()
@@ -668,6 +708,8 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     use std::time::Duration;
 
     let (tx, rx) = channel();
+
+    info!(LOGGING, "Initializing watcher");
 
     let mut watcher: RecommendedWatcher =
         Watcher::new(tx, Duration::from_secs(2)).context("could not initialize watcher")?;
@@ -727,6 +769,7 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
                 }
                 #[cfg(not(all(feature = "full-restart", unix, not(feature = "serve"))))]
                 {
+                    println!("Calling build after changes were detected");
                     if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
                         eprintln!("{}", err);
                     }
@@ -811,7 +854,7 @@ fn wasm_opt(
         Ok(output.stdout)
     };
 
-    eprintln!("WARNING: no optimization has been done on the WASM");
+    warn!(LOGGING, "No optimization has been done on the WASM");
     Ok(binary)
 }
 
@@ -915,6 +958,12 @@ pub mod prelude {
     pub use tide;
     #[cfg(feature = "serve")]
     pub use tide::Server;
+
+    pub use slog;
+    pub use slog::{debug, error, info, warn};
+    // pub use sloggers;
+
+    pub use super::LOGGING;
 
     pub use super::{
         BuildArgs, BuildProfile, CargoChild, DefaultBuildArgs, DefaultServeArgs, Hooks, PackageExt,
