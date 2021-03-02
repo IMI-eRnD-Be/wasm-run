@@ -638,14 +638,26 @@ impl Default for Hooks {
             ),
             #[cfg(feature = "serve")]
             serve: Box::new(|args, server| {
-                use tide::{Body, Response};
+                use tide::{Body, Request, Response};
 
-                let index_path = args.build_args().build_path().join("index.html");
+                let build_path = args.build_args().build_path().to_owned();
+                let index_path = build_path.join("index.html").to_owned();
 
                 server.at("/").serve_dir(args.build_args().build_path())?;
                 server.at("/").get(move |_| {
                     let index_path = index_path.clone();
                     async move { Ok(Response::from(Body::from_file(index_path).await?)) }
+                });
+                server.at("/*path").get(move |req: Request<()>| {
+                    let build_path = build_path.clone();
+                    async move {
+                        match Body::from_file(build_path.join(req.param("path").unwrap())).await {
+                            Ok(body) => Ok(Response::from(body)),
+                            Err(_) => Ok(Response::from(
+                                Body::from_file(build_path.join("index.html")).await?,
+                            )),
+                        }
+                    }
                 });
 
                 Ok(())
