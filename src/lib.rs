@@ -236,7 +236,7 @@ pub trait BuildArgs: Downcast {
         BACKEND_PACKAGE
             .get()
             .expect("package has been initialized on startup; qed")
-            .clone()
+            .to_owned()
     }
 
     /// Create a profiling build. Enable optimizations and debug info.
