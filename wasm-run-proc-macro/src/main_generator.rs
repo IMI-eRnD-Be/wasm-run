@@ -9,14 +9,14 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     let ident = &item.ident;
     let Attr {
         other_cli_commands,
-        #[cfg(not(feature = "serve"))]
-        run_server,
         pre_build,
         post_build,
         #[cfg(feature = "serve")]
         serve,
         watch,
         pkg_name,
+        #[cfg(not(feature = "serve"))]
+        backend_pkg_name,
         default_build_path,
         build_args,
         serve_args,
@@ -130,16 +130,11 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         quote! { #pkg_name }
     });
 
-    #[cfg(feature = "serve")]
-    let run_server_arm = quote! {};
-    #[cfg(not(feature = "serve"))]
-    let run_server_arm = if let Some(run_server) = run_server {
-        quote_spanned! {run_server.span()=>
-            WasmRunCliCommand::RunServer(args) => #run_server(args)?,
-        }
-    } else {
-        quote! {}
-    };
+    let backend_pkg_name = backend_pkg_name
+        .map(|x| quote! { Some(#x) })
+        .unwrap_or_else(|| {
+            quote! { None }
+        });
 
     let default_build_path = if let Some(path) = default_build_path {
         quote_spanned! {path.span()=>
@@ -208,6 +203,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
 
             let (metadata, package) = ::wasm_run::wasm_run_init(
                 #pkg_name,
+                #backend_pkg_name,
                 #default_build_path,
                 hooks,
             )?;
@@ -218,7 +214,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                         args.run()?;
                     },
                     WasmRunCliCommand::Serve(args) => args.run()?,
-                    #run_server_arm
                     #other_cli_commands
                 }
             } else {

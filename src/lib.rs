@@ -127,9 +127,10 @@ pub enum BuildProfile {
 #[doc(hidden)]
 pub fn wasm_run_init(
     pkg_name: &str,
+    backend_pkg_name: Option<&str>,
     default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
     hooks: Hooks,
-) -> Result<(&Metadata, &Package)> {
+) -> Result<(&'static Metadata, &'static Package)> {
     let metadata = MetadataCommand::new()
         .exec()
         .context("this binary is not meant to be ran outside of its workspace")?;
@@ -139,18 +140,6 @@ pub fn wasm_run_init(
         .expect("the cell is initially empty; qed");
 
     let metadata = METADATA.get().unwrap();
-
-    let backend_package = METADATA
-        .get()
-        .unwrap()
-        .packages
-        .iter()
-        .find(|x| x.name == "backend") // TODO: parametrize
-        .expect("the package existence has been checked during compile time; qed");
-
-    BACKEND_PACKAGE
-        .set(Some(backend_package))
-        .expect("the cell is initially empty; qed");
 
     let package = METADATA
         .get()
@@ -165,6 +154,24 @@ pub fn wasm_run_init(
         .expect("the cell is initially empty; qed");
 
     let package = PACKAGE.get().unwrap();
+
+    if let Some(name) = backend_pkg_name {
+        let backend_package = METADATA
+            .get()
+            .unwrap()
+            .packages
+            .iter()
+            .find(|x| x.name == name)
+            .expect("the package existence has been checked during compile time; qed");
+
+        BACKEND_PACKAGE
+            .set(Some(backend_package))
+            .expect("the cell is initially empty; qed");
+    } else {
+        BACKEND_PACKAGE
+            .set(None)
+            .expect("the cell is initially empty; qed");
+    }
 
     DEFAULT_BUILD_PATH
         .set(if let Some(default_build_path) = default_build_path {
@@ -413,6 +420,10 @@ pub trait ServeArgs: Downcast + Send {
         {
             use std::sync::Arc;
             use std::thread;
+
+            if self.build_args().backend_package().is_none() {
+                bail!("missing backend crate name");
+            }
 
             let args = Arc::new(self);
             let t1 = {

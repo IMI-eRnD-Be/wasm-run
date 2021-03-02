@@ -3,14 +3,14 @@ use syn::{Ident, LitStr, Path, Token};
 
 pub struct Attr {
     pub other_cli_commands: Option<Path>,
-    #[cfg(not(feature = "serve"))]
-    pub run_server: Option<Path>,
     pub pre_build: Option<Path>,
     pub post_build: Option<Path>,
     #[cfg(feature = "serve")]
     pub serve: Option<Path>,
     pub watch: Option<Path>,
     pub pkg_name: Option<LitStr>,
+    #[cfg(not(feature = "serve"))]
+    pub backend_pkg_name: Option<LitStr>,
     pub default_build_path: Option<Path>,
     pub build_args: Option<Path>,
     pub serve_args: Option<Path>,
@@ -24,9 +24,15 @@ impl Attr {
             input.parse::<Token![,]>()?;
         }
 
-        let mut other_cli_commands = None;
         #[cfg(not(feature = "serve"))]
-        let mut run_server = None;
+        let backend_pkg_name = input.parse().ok();
+
+        #[cfg(not(feature = "serve"))]
+        if backend_pkg_name.is_some() && !input.is_empty() {
+            input.parse::<Token![,]>()?;
+        }
+
+        let mut other_cli_commands = None;
         let mut pre_build = None;
         let mut post_build = None;
         #[cfg(feature = "serve")]
@@ -50,8 +56,6 @@ impl Attr {
                 "post_build" => post_build = Some(path),
                 #[cfg(feature = "serve")]
                 "serve" => serve = Some(path),
-                #[cfg(not(feature = "serve"))]
-                "run_server" => run_server = Some(path),
                 "watch" => watch = Some(path),
                 "default_build_path" => default_build_path = Some(path),
                 "build_args" => build_args = Some(path),
@@ -68,14 +72,14 @@ impl Attr {
 
         Ok(Self {
             other_cli_commands,
-            #[cfg(not(feature = "serve"))]
-            run_server,
             pre_build,
             post_build,
             #[cfg(feature = "serve")]
             serve,
             watch,
             pkg_name,
+            #[cfg(not(feature = "serve"))]
+            backend_pkg_name,
             default_build_path,
             build_args,
             serve_args,

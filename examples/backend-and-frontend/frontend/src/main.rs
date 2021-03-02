@@ -5,7 +5,7 @@ use std::process::Command;
 use structopt::StructOpt;
 use wasm_run::prelude::*;
 
-#[wasm_run::main(other_cli_commands)]
+#[wasm_run::main("frontend", "backend", other_cli_commands)]
 #[derive(StructOpt, Debug)]
 enum Cli {
     BuildContainerImage,
