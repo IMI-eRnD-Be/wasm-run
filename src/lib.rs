@@ -474,11 +474,29 @@ pub struct Hooks {
     /// excludes the target directory.
     pub backend_watch:
         Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
+
+    /// This hook will be run before (re-)starting the backend.
+    /// You can tweak the cargo command that is run here: adding/removing environment variables or
+    /// adding arguments.
+    /// By default it will do `cargo run -p <backend_crate>`.
+    pub backend_command: Box<dyn Fn(&dyn ServeArgs, &mut Command) -> Result<()> + Send + Sync>,
 }
 
 impl Default for Hooks {
     fn default() -> Self {
         Self {
+            backend_command: Box::new(|args, command| {
+                command.args(&[
+                    "run",
+                    "-p",
+                    &args
+                        .build_args()
+                        .backend_package()
+                        .context("missing backend crate name")?
+                        .name,
+                ]);
+                Ok(())
+            }),
             backend_watch: Box::new(|args, watcher| {
                 use notify::{RecursiveMode, Watcher};
 
@@ -732,16 +750,6 @@ fn serve_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
     (hooks.backend_watch)(args, &mut watcher)?;
 
-    let args = vec![
-        "run",
-        "-p",
-        &args
-            .build_args()
-            .backend_package()
-            .context("missing backend crate name")?
-            .name,
-    ];
-
     struct BackgroundProcess(std::process::Child);
 
     impl Drop for BackgroundProcess {
@@ -752,11 +760,10 @@ fn serve_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
         }
     }
 
-    let run_server = || -> std::io::Result<BackgroundProcess> {
-        Command::new("cargo")
-            .args(&args)
-            .spawn()
-            .map(BackgroundProcess)
+    let run_server = || -> Result<BackgroundProcess> {
+        let mut command = Command::new("cargo");
+        (hooks.backend_command)(args, &mut command)?;
+        Ok(command.spawn().map(BackgroundProcess)?)
     };
 
     let mut process_guard = Some(run_server()?);
