@@ -5,14 +5,10 @@ use std::process::Command;
 use structopt::StructOpt;
 use wasm_run::prelude::*;
 
-#[wasm_run::main(run_server, other_cli_commands)]
+#[wasm_run::main(other_cli_commands)]
 #[derive(StructOpt, Debug)]
 enum Cli {
     BuildContainerImage,
-}
-
-fn run_server(_args: DefaultServeArgs) -> anyhow::Result<()> {
-    Err(backend::run().into())
 }
 
 fn other_cli_commands(cli: Cli, metadata: &Metadata, _package: &Package) -> anyhow::Result<()> {

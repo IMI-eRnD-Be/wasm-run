@@ -43,14 +43,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         quote! { ::wasm_run::DefaultServeArgs }
     };
 
-    #[cfg(feature = "serve")]
-    let run_variant = quote! {};
-    #[cfg(not(feature = "serve"))]
-    let run_variant = quote! {
-        #[structopt(setting = ::wasm_run::structopt::clap::AppSettings::Hidden)]
-        RunServer(#serve_ty),
-    };
-
     let span = other_cli_commands.span();
     let other_cli_commands = other_cli_commands
         .map(|x| {
@@ -146,12 +138,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             WasmRunCliCommand::RunServer(args) => #run_server(args)?,
         }
     } else {
-        quote! {
-            _ => compile_error!(
-                "without the feature `serve` you need to provide a `run_server` argument to the \
-                macro. Example: #[main(run_server = my_awesome_function)]",
-            ),
-        }
+        quote! {}
     };
 
     let default_build_path = if let Some(path) = default_build_path {
@@ -204,7 +191,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             enum WasmRunCliCommand {
                 Build(#build_ty),
                 Serve(#serve_ty),
-                #run_variant
                 #[structopt(flatten)]
                 Other(#ident),
             }

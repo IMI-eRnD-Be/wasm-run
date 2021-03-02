@@ -86,10 +86,11 @@ use downcast_rs::*;
 use fs_extra::dir;
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::BufReader;
 use std::iter;
+use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "serve")]
 use std::pin::Pin;
@@ -393,7 +394,7 @@ pub trait ServeArgs: Downcast + Send {
     /// Run the `serve` command.
     fn run(self) -> Result<()>
     where
-        Self: Sized + 'static,
+        Self: Sync + Sized + 'static,
     {
         let hooks = HOOKS.get().expect("wasm_run_init() has not been called");
         // NOTE: the first step for serving is to call `build` a first time. The build directory
@@ -410,8 +411,19 @@ pub trait ServeArgs: Downcast + Send {
         }
         #[cfg(not(feature = "serve"))]
         {
-            //watch(&self, hooks)
-            watch_backend(&self, hooks)
+            use std::sync::Arc;
+            use std::thread;
+
+            let args = Arc::new(self);
+            let t1 = {
+                let args = Arc::clone(&args);
+                thread::spawn(move || watch_frontend(&*args, hooks))
+            };
+            let t2 = thread::spawn(move || watch_backend(&*args, hooks));
+            let _ = t1.join();
+            let _ = t2.join();
+
+            Err(anyhow!("server and watcher unexpectedly exited"))
         }
     }
 }
@@ -510,13 +522,14 @@ impl Default for Hooks {
                     .iter()
                     .map(|x| (x.name.as_str(), x))
                     .collect();
+                let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
                 backend
                     .dependencies
                     .iter()
                     .map(|x| packages.get(x.name.as_str()).unwrap())
+                    .filter(|x| members.contains(&x.id))
                     .map(|x| x.manifest_path.parent().unwrap())
-                    .filter(|x| x.starts_with(&metadata.workspace_root))
                     .chain(iter::once(backend.manifest_path.parent().unwrap()))
                     .try_for_each(|x| watcher.watch(x, RecursiveMode::Recursive))?;
 
@@ -526,27 +539,26 @@ impl Default for Hooks {
             }),
             watch: Box::new(|args, watcher| {
                 use notify::{RecursiveMode, Watcher};
-                use std::collections::HashSet;
-                use std::iter::FromIterator;
 
                 let metadata = args.build_args().metadata();
-
-                let _ = watcher.watch("index.html", RecursiveMode::Recursive);
-                let _ = watcher.watch("static", RecursiveMode::Recursive);
-
+                let frontend = args.build_args().package();
+                let packages: HashMap<_, _> = metadata
+                    .packages
+                    .iter()
+                    .map(|x| (x.name.as_str(), x))
+                    .collect();
                 let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
-                for package in metadata.packages.iter().filter(|x| members.contains(&x.id)) {
-                    let _ = watcher.watch(&package.manifest_path, RecursiveMode::Recursive);
-                    let _ = watcher.watch(
-                        package.manifest_path.parent().unwrap().join("src"),
-                        RecursiveMode::Recursive,
-                    );
-                    let _ = watcher.watch(
-                        package.manifest_path.parent().unwrap().join("build.rs"),
-                        RecursiveMode::Recursive,
-                    );
-                }
+                frontend
+                    .dependencies
+                    .iter()
+                    .map(|x| packages.get(x.name.as_str()).unwrap())
+                    .filter(|x| members.contains(&x.id))
+                    .map(|x| x.manifest_path.parent().unwrap())
+                    .chain(iter::once(frontend.manifest_path.parent().unwrap()))
+                    .try_for_each(|x| watcher.watch(x, RecursiveMode::Recursive))?;
+
+                let _ = watcher.unwatch(&metadata.target_directory);
 
                 Ok(())
             }),
@@ -789,7 +801,7 @@ fn watch_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     }
 }
 
-fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
+fn watch_frontend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     use notify::{DebouncedEvent, Watcher};
     use std::sync::mpsc::channel;
     use std::time::Duration;
@@ -803,65 +815,13 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
     let build_args = args.build_args();
 
-    #[cfg(not(feature = "serve"))]
-    fn run_server() -> std::io::Result<impl std::any::Any> {
-        struct BackgroundProcess(std::process::Child);
-
-        impl Drop for BackgroundProcess {
-            fn drop(&mut self) {
-                // TODO: cleaner exit on Unix
-                let _ = self.0.kill();
-                let _ = self.0.wait();
-            }
-        }
-
-        let mut found = false;
-        let args = std::env::args().skip(1).map(|x| {
-            if !found && x == "serve" {
-                found = true;
-                "run-server".to_owned()
-            } else {
-                x
-            }
-        });
-
-        Command::new(std::env::current_exe().unwrap())
-            .args(args)
-            .spawn()
-            .map(BackgroundProcess)
-    }
-
-    #[cfg(not(feature = "serve"))]
-    let mut process_guard = Some(run_server()?);
-
     loop {
         use DebouncedEvent::*;
 
         match rx.recv() {
             Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
-                #[cfg(all(feature = "full-restart", unix, not(feature = "serve")))]
-                {
-                    use std::os::unix::process::CommandExt;
-
-                    drop(build_args);
-                    drop(process_guard.take());
-
-                    let err = Command::new("cargo")
-                        .args(&["run", "--"])
-                        .args(std::env::args_os().skip(1))
-                        .exec();
-                    eprintln!("could not restart process: {}", err);
-                }
-                #[cfg(not(all(feature = "full-restart", unix, not(feature = "serve"))))]
-                {
-                    if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
-                        eprintln!("{}", err);
-                    }
-                    #[cfg(not(feature = "serve"))]
-                    match run_server() {
-                        Ok(guard) => drop(process_guard.replace(guard)),
-                        Err(err) => eprintln!("running server error: {}", err),
-                    }
+                if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
+                    eprintln!("{}", err);
                 }
             }
             Ok(_) => {}
