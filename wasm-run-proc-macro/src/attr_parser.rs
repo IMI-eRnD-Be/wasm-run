@@ -9,7 +9,6 @@ pub struct Attr {
     pub serve: Option<Path>,
     pub watch: Option<Path>,
     pub pkg_name: Option<LitStr>,
-    #[cfg(not(feature = "serve"))]
     pub backend_pkg_name: Option<LitStr>,
     pub default_build_path: Option<Path>,
     pub build_args: Option<Path>,
@@ -24,10 +23,8 @@ impl Attr {
             input.parse::<Token![,]>()?;
         }
 
-        #[cfg(not(feature = "serve"))]
         let backend_pkg_name = input.parse().ok();
 
-        #[cfg(not(feature = "serve"))]
         if backend_pkg_name.is_some() && !input.is_empty() {
             input.parse::<Token![,]>()?;
         }
@@ -78,7 +75,6 @@ impl Attr {
             serve,
             watch,
             pkg_name,
-            #[cfg(not(feature = "serve"))]
             backend_pkg_name,
             default_build_path,
             build_args,
