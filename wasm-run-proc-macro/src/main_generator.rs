@@ -130,6 +130,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         quote! { #pkg_name }
     });
 
+    #[cfg(not(feature = "serve"))]
     let backend_pkg_name = backend_pkg_name
         .map(|x| quote! { Some(#x) })
         .unwrap_or_else(|| {
@@ -203,6 +204,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
 
             let (metadata, package) = ::wasm_run::wasm_run_init(
                 #pkg_name,
+                #[cfg(not(feature = "serve"))]
                 #backend_pkg_name,
                 #default_build_path,
                 hooks,
