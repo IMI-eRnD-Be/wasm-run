@@ -411,7 +411,7 @@ pub trait ServeArgs: Downcast + Send {
         {
             async_std::task::block_on(async {
                 let t1 = async_std::task::spawn(serve_frontend(&self, hooks)?);
-                let t2 = async_std::task::spawn_blocking(move || watch(&self, hooks));
+                let t2 = async_std::task::spawn_blocking(move || watch_frontend(&self, hooks));
                 futures::try_join!(t1, t2)?;
                 Err(anyhow!("server and watcher unexpectedly exited"))
             })
