@@ -80,14 +80,16 @@
 #[cfg(feature = "prebuilt-wasm-opt")]
 mod prebuilt_wasm_opt;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use fs_extra::dir;
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
+use std::collections::HashMap;
 use std::fs;
 use std::io::BufReader;
+use std::iter;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "serve")]
 use std::pin::Pin;
@@ -106,6 +108,7 @@ const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/
 static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
 static PACKAGE: OnceCell<&Package> = OnceCell::new();
+static BACKEND_PACKAGE: OnceCell<Option<&Package>> = OnceCell::new();
 static HOOKS: OnceCell<Hooks> = OnceCell::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -135,6 +138,18 @@ pub fn wasm_run_init(
         .expect("the cell is initially empty; qed");
 
     let metadata = METADATA.get().unwrap();
+
+    let backend_package = METADATA
+        .get()
+        .unwrap()
+        .packages
+        .iter()
+        .find(|x| x.name == "backend") // TODO: parametrize
+        .expect("the package existence has been checked during compile time; qed");
+
+    BACKEND_PACKAGE
+        .set(Some(backend_package))
+        .expect("the cell is initially empty; qed");
 
     let package = METADATA
         .get()
@@ -206,6 +221,14 @@ pub trait BuildArgs: Downcast {
         PACKAGE
             .get()
             .expect("package has been initialized on startup; qed")
+    }
+
+    /// Backend package metadata.
+    fn backend_package(&self) -> Option<&Package> {
+        BACKEND_PACKAGE
+            .get()
+            .expect("package has been initialized on startup; qed")
+            .clone()
     }
 
     /// Create a profiling build. Enable optimizations and debug info.
@@ -306,7 +329,7 @@ pub trait BuildArgs: Downcast {
     where
         Self: Sized + 'static,
     {
-        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
+        let hooks = HOOKS.get().expect("wasm_run_init() has not been called");
         build(BuildProfile::Release, &self, hooks)?;
         Ok(self.build_path().to_owned())
     }
@@ -372,22 +395,23 @@ pub trait ServeArgs: Downcast + Send {
     where
         Self: Sized + 'static,
     {
-        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
+        let hooks = HOOKS.get().expect("wasm_run_init() has not been called");
         // NOTE: the first step for serving is to call `build` a first time. The build directory
         //       must be present before we start watching files there.
         build(BuildProfile::Dev, self.build_args(), hooks)?;
         #[cfg(feature = "serve")]
         {
             async_std::task::block_on(async {
-                let t1 = async_std::task::spawn(serve(&self, hooks)?);
+                let t1 = async_std::task::spawn(serve_frontend(&self, hooks)?);
                 let t2 = async_std::task::spawn_blocking(move || watch(&self, hooks));
                 futures::try_join!(t1, t2)?;
-                Ok(())
+                Err(anyhow!("server and watcher unexpectedly exited"))
             })
         }
         #[cfg(not(feature = "serve"))]
         {
-            watch(&self, hooks)
+            //watch(&self, hooks)
+            serve_backend(&self, hooks)
         }
     }
 }
@@ -444,11 +468,44 @@ pub struct Hooks {
     /// By default it will add all the `src/` directories and `Cargo.toml` files of all the crates
     /// in the workspace plus the `static/` directory if it exists in the frontend crate.
     pub watch: Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
+
+    /// This hook will be run before starting to watch for changes in files.
+    /// By default it will add the backend crate directory and all its dependencies. But it
+    /// excludes the target directory.
+    pub backend_watch:
+        Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
 }
 
 impl Default for Hooks {
     fn default() -> Self {
         Self {
+            backend_watch: Box::new(|args, watcher| {
+                use notify::{RecursiveMode, Watcher};
+
+                let metadata = args.build_args().metadata();
+                let backend = args
+                    .build_args()
+                    .backend_package()
+                    .context("missing backend crate name")?;
+                let packages: HashMap<_, _> = metadata
+                    .packages
+                    .iter()
+                    .map(|x| (x.name.as_str(), x))
+                    .collect();
+
+                backend
+                    .dependencies
+                    .iter()
+                    .map(|x| packages.get(x.name.as_str()).unwrap())
+                    .map(|x| x.manifest_path.parent().unwrap())
+                    .filter(|x| x.starts_with(&metadata.workspace_root))
+                    .chain(iter::once(backend.manifest_path.parent().unwrap()))
+                    .try_for_each(|x| watcher.watch(x, RecursiveMode::Recursive))?;
+
+                let _ = watcher.unwatch(&metadata.target_directory);
+
+                Ok(())
+            }),
             watch: Box::new(|args, watcher| {
                 use notify::{RecursiveMode, Watcher};
                 use std::collections::HashSet;
@@ -637,7 +694,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
 }
 
 #[cfg(feature = "serve")]
-fn serve(
+fn serve_frontend(
     args: &dyn ServeArgs,
     hooks: &Hooks,
 ) -> Result<Pin<Box<impl std::future::Future<Output = Result<()>> + Send + 'static>>> {
@@ -662,6 +719,69 @@ fn serve(
     ))
 }
 
+#[cfg(not(feature = "serve"))]
+fn serve_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
+    use notify::{DebouncedEvent, Watcher};
+    use std::sync::mpsc::channel;
+    use std::time::Duration;
+
+    let (tx, rx) = channel();
+
+    let mut watcher: RecommendedWatcher =
+        Watcher::new(tx, Duration::from_secs(2)).context("could not initialize watcher")?;
+
+    (hooks.backend_watch)(args, &mut watcher)?;
+
+    let args = vec![
+        "run",
+        "-p",
+        &args
+            .build_args()
+            .backend_package()
+            .context("missing backend crate name")?
+            .name,
+    ];
+
+    struct BackgroundProcess(std::process::Child);
+
+    impl Drop for BackgroundProcess {
+        fn drop(&mut self) {
+            // TODO: cleaner exit on Unix
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    let run_server = || -> std::io::Result<BackgroundProcess> {
+        Command::new("cargo")
+            .args(&args)
+            .spawn()
+            .map(BackgroundProcess)
+    };
+
+    let mut process_guard = Some(run_server()?);
+
+    loop {
+        use DebouncedEvent::*;
+
+        match rx.recv() {
+            Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
+                drop(process_guard.take());
+                match run_server() {
+                    Ok(guard) => {
+                        process_guard.replace(guard);
+                    }
+                    Err(err) => {
+                        eprintln!("running server error: {}", err);
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(e) => eprintln!("watch error: {}", e),
+        }
+    }
+}
+
 fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     use notify::{DebouncedEvent, Watcher};
     use std::sync::mpsc::channel;
@@ -678,9 +798,9 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
     #[cfg(not(feature = "serve"))]
     fn run_server() -> std::io::Result<impl std::any::Any> {
-        struct ServerProcess(std::process::Child);
+        struct BackgroundProcess(std::process::Child);
 
-        impl Drop for ServerProcess {
+        impl Drop for BackgroundProcess {
             fn drop(&mut self) {
                 // TODO: cleaner exit on Unix
                 let _ = self.0.kill();
@@ -701,7 +821,7 @@ fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
         Command::new(std::env::current_exe().unwrap())
             .args(args)
             .spawn()
-            .map(ServerProcess)
+            .map(BackgroundProcess)
     }
 
     #[cfg(not(feature = "serve"))]

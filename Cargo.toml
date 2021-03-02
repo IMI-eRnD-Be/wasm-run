@@ -16,7 +16,6 @@ description = "Build tool that replaces `cargo run` to build WASM projects"
 [features]
 default = ["serve", "prebuilt-wasm-opt"]
 serve = ["tide", "async-std", "wasm-run-proc-macro/serve"]
-full-restart = []
 prebuilt-wasm-opt = ["binary-install", "platforms", "tempfile"]
 sass = ["sass-rs", "walkdir"]
 

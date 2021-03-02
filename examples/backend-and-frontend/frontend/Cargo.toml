@@ -13,4 +13,4 @@ wasm-bindgen = "^0.2"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 backend = { path = "../backend" }
 structopt = "0.3"
-wasm-run = { path = "../../..", default-features = false, features = ["full-restart", "binaryen"] }
+wasm-run = { path = "../../..", default-features = false, features = ["binaryen"] }
