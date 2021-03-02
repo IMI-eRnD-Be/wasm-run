@@ -411,7 +411,7 @@ pub trait ServeArgs: Downcast + Send {
         #[cfg(not(feature = "serve"))]
         {
             //watch(&self, hooks)
-            serve_backend(&self, hooks)
+            watch_backend(&self, hooks)
         }
     }
 }
@@ -738,7 +738,7 @@ fn serve_frontend(
 }
 
 #[cfg(not(feature = "serve"))]
-fn serve_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
+fn watch_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     use notify::{DebouncedEvent, Watcher};
     use std::sync::mpsc::channel;
     use std::time::Duration;
