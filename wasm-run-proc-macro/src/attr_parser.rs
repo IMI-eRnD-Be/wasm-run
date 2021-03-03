@@ -7,8 +7,10 @@ pub struct Attr {
     pub post_build: Option<Path>,
     #[cfg(feature = "mini-http-server")]
     pub serve: Option<Path>,
-    pub watch: Option<Path>,
-    pub pkg_name: Option<LitStr>,
+    pub frontend_watch: Option<Path>,
+    pub frontend_pkg_name: Option<LitStr>,
+    #[cfg(not(feature = "mini-http-server"))]
+    pub backend_watch: Option<Path>,
     pub backend_pkg_name: Option<LitStr>,
     pub default_build_path: Option<Path>,
     pub build_args: Option<Path>,
@@ -17,9 +19,9 @@ pub struct Attr {
 
 impl Attr {
     pub fn parse(input: ParseStream) -> Result<Self> {
-        let pkg_name = input.parse().ok();
+        let frontend_pkg_name = input.parse().ok();
 
-        if pkg_name.is_some() && !input.is_empty() {
+        if frontend_pkg_name.is_some() && !input.is_empty() {
             input.parse::<Token![,]>()?;
         }
 
@@ -34,7 +36,9 @@ impl Attr {
         let mut post_build = None;
         #[cfg(feature = "mini-http-server")]
         let mut serve = None;
-        let mut watch = None;
+        let mut frontend_watch = None;
+        #[cfg(not(feature = "mini-http-server"))]
+        let mut backend_watch = None;
         let mut default_build_path = None;
         let mut build_args = None;
         let mut serve_args = None;
@@ -53,7 +57,9 @@ impl Attr {
                 "post_build" => post_build = Some(path),
                 #[cfg(feature = "mini-http-server")]
                 "serve" => serve = Some(path),
-                "watch" => watch = Some(path),
+                #[cfg(not(feature = "mini-http-server"))]
+                "backend_watch" => backend_watch = Some(path),
+                "frontend_watch" => frontend_watch = Some(path),
                 "default_build_path" => default_build_path = Some(path),
                 "build_args" => build_args = Some(path),
                 "serve_args" => serve_args = Some(path),
@@ -73,8 +79,10 @@ impl Attr {
             post_build,
             #[cfg(feature = "mini-http-server")]
             serve,
-            watch,
-            pkg_name,
+            frontend_watch,
+            frontend_pkg_name,
+            #[cfg(not(feature = "mini-http-server"))]
+            backend_watch,
             backend_pkg_name,
             default_build_path,
             build_args,

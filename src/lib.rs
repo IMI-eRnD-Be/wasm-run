@@ -39,8 +39,7 @@
 //!     example using the web framework Rocket (backend) which uses Rocket itself to serve the file
 //!     during the development (any file change is also detected and it rebuilds and restart
 //!     automatically).
-//!  -  a
-//!  ["custom-cli-command"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/custom-cli-command)
+//!  -  a ["custom-cli-command"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/custom-cli-command)
 //!     example that adds a custom CLI command named `build-docker-image` which build the backend,
 //!     the frontend and package the whole thing in a container image.
 //!
