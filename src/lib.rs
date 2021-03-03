@@ -95,6 +95,8 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "serve")]
 use std::pin::Pin;
 use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::mpsc;
+use std::time;
 use structopt::StructOpt;
 #[cfg(feature = "serve")]
 use tide::Server;
@@ -544,8 +546,6 @@ impl Default for Hooks {
                     .chain(iter::once(backend.manifest_path.parent().unwrap()))
                     .try_for_each(|x| watcher.watch(x, RecursiveMode::Recursive))?;
 
-                let _ = watcher.unwatch(&metadata.target_directory);
-
                 Ok(())
             }),
             watch: Box::new(|args, watcher| {
@@ -568,8 +568,6 @@ impl Default for Hooks {
                     .map(|x| x.manifest_path.parent().unwrap())
                     .chain(iter::once(frontend.manifest_path.parent().unwrap()))
                     .try_for_each(|x| watcher.watch(x, RecursiveMode::Recursive))?;
-
-                let _ = watcher.unwatch(&metadata.target_directory);
 
                 Ok(())
             }),
@@ -774,14 +772,10 @@ fn serve_frontend(
 
 #[cfg(not(feature = "serve"))]
 fn watch_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
-    use notify::{DebouncedEvent, Watcher};
-    use std::sync::mpsc::channel;
-    use std::time::Duration;
+    let (tx, rx) = mpsc::channel();
 
-    let (tx, rx) = channel();
-
-    let mut watcher: RecommendedWatcher =
-        Watcher::new(tx, Duration::from_secs(2)).context("could not initialize watcher")?;
+    let mut watcher: RecommendedWatcher = notify::Watcher::new(tx, time::Duration::from_secs(2))
+        .context("could not initialize watcher")?;
 
     (hooks.backend_watch)(args, &mut watcher)?;
 
@@ -803,47 +797,46 @@ fn watch_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
 
     let mut process_guard = Some(run_server()?);
 
-    loop {
-        use DebouncedEvent::*;
-
-        match rx.recv() {
-            Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
-                drop(process_guard.take());
-                match run_server() {
-                    Ok(guard) => {
-                        process_guard.replace(guard);
-                    }
-                    Err(err) => {
-                        eprintln!("running server error: {}", err);
-                    }
-                }
-            }
-            Ok(_) => {}
-            Err(e) => eprintln!("watch error: {}", e),
-        }
-    }
+    watch_loop(args, rx, || {
+        drop(process_guard.take());
+        process_guard.replace(run_server()?);
+        Ok(())
+    });
 }
 
 fn watch_frontend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
-    use notify::{DebouncedEvent, Watcher};
-    use std::sync::mpsc::channel;
-    use std::time::Duration;
+    let (tx, rx) = mpsc::channel();
 
-    let (tx, rx) = channel();
-
-    let mut watcher: RecommendedWatcher =
-        Watcher::new(tx, Duration::from_secs(2)).context("could not initialize watcher")?;
+    let mut watcher: RecommendedWatcher = notify::Watcher::new(tx, time::Duration::from_secs(2))
+        .context("could not initialize watcher")?;
 
     (hooks.watch)(args, &mut watcher)?;
 
     let build_args = args.build_args();
 
-    loop {
-        use DebouncedEvent::*;
+    watch_loop(args, rx, || build(BuildProfile::Dev, build_args, hooks));
+}
 
-        match rx.recv() {
-            Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
-                if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
+fn watch_loop(
+    args: &dyn ServeArgs,
+    rx: mpsc::Receiver<notify::DebouncedEvent>,
+    mut callback: impl FnMut() -> Result<()>,
+) -> ! {
+    loop {
+        use notify::DebouncedEvent::*;
+
+        let message = rx.recv();
+        match &message {
+            Ok(Create(path)) | Ok(Write(path)) | Ok(Remove(path)) | Ok(Rename(_, path))
+                if !path.starts_with(args.build_args().build_path())
+                    && !path.starts_with(args.build_args().target_path())
+                    && !path
+                        .file_name()
+                        .and_then(|x| x.to_str())
+                        .map(|x| x.starts_with('.'))
+                        .unwrap_or(false) =>
+            {
+                if let Err(err) = callback() {
                     eprintln!("{}", err);
                 }
             }
