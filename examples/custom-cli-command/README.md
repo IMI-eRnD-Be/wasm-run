@@ -1,8 +1,19 @@
-Output
-------
+Custom CLI Command
+==================
+
+You can add your own CLI commands. In this example, we added the command
+`build-container-image` which makes a Docker image that builds the backend, the
+frontend and pack the whole thing together in a container image using Docker.
+
+Run:
 
 ```
-~/r/w/e/backend-and-frontend > cargo run -- build-container-image
+cargo run -- build-container-image
+```
+
+Output:
+
+```
    Compiling wasm-run v0.6.2-alpha.0 (/home/cecile/repos/wasm-run)
    Compiling backend v0.1.0 (/home/cecile/repos/wasm-run/examples/backend-and-frontend/backend)
    Compiling frontend v0.1.0 (/home/cecile/repos/wasm-run/examples/backend-and-frontend/frontend)
