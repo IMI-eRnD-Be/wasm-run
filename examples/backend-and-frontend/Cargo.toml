@@ -2,9 +2,6 @@
 members = [
 	"backend",
 	"frontend",
+	"run",
 ]
-default-members = ["frontend"]
-
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
+default-members = ["run"]
