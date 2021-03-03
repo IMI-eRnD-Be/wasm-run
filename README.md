@@ -14,12 +14,14 @@ offers a great deal of customization.
 
 To build your WASM project you normally need an external tool like `wasm-bindgen`, `wasm-pack`
 or `cargo-wasm`. `wasm-run` takes a different approach: it's a library that you install as a
-dependency to a binary of your project. Because of that you don't need any external tool, the
-tooling is built as part of your dependences.
+dependency to your project. Because of that you don't need any external tool, the
+tooling is built as part of your dependencies, which makes the CI easier to set up and reduce
+the hassle for new comers to start working on the project.
 
-To build your project for production you can use the command `cargo run -- build` and to run a
-development server that reloads automatically when the sources change you can use `cargo run --
-serve`.
+To build your project for production you can use the command `cargo run -- build`. You can also
+run a development server that rebuilds automatically when the code changes:
+`cargo run -- serve`. It doesn't rebuild everything, only the backend if the backend changed or
+the frontend if the frontend changed.
 
 **Please note that there is a space between `--` and `build` and between `--` and `serve`!**
 
@@ -31,7 +33,7 @@ only two files (`index.html`, `app_bg.wasm`).
 
 ## Examples
 
-There are two basic examples to help you get started quickly:
+There are 3 basic examples to help you get started quickly:
 
  -  a ["basic"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/basic) example for a
     frontend only app that rebuilds the app when a file change is detected;
@@ -39,10 +41,13 @@ There are two basic examples to help you get started quickly:
     example using the web framework Rocket (backend) which uses Rocket itself to serve the file
     during the development (any file change is also detected and it rebuilds and restart
     automatically).
+ -  a ["custom-cli-command"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/custom-cli-command)
+    example that adds a custom CLI command named `build-docker-image` which build the backend,
+    the frontend and package the whole thing in a container image.
 
 ## Usage
 
-All the details about the hooks can be find on the macro [`main`].
+All the details about the hooks can be found on the macro [`main`].
 
 ## Additional Information
 
