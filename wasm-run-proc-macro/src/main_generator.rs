@@ -11,7 +11,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         other_cli_commands,
         pre_build,
         post_build,
-        #[cfg(feature = "serve")]
+        #[cfg(feature = "mini-http-server")]
         serve,
         watch,
         pkg_name,
@@ -87,7 +87,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         }
     });
 
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "mini-http-server")]
     let serve = serve.map(|path| {
         quote_spanned! {path.span()=>
             serve: Box::new(|args, app| {
@@ -96,7 +96,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             }),
         }
     });
-    #[cfg(not(feature = "serve"))]
+    #[cfg(not(feature = "mini-http-server"))]
     let serve = quote! {};
 
     let watch = watch.map(|path| {

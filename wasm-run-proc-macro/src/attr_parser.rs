@@ -5,7 +5,7 @@ pub struct Attr {
     pub other_cli_commands: Option<Path>,
     pub pre_build: Option<Path>,
     pub post_build: Option<Path>,
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "mini-http-server")]
     pub serve: Option<Path>,
     pub watch: Option<Path>,
     pub pkg_name: Option<LitStr>,
@@ -32,7 +32,7 @@ impl Attr {
         let mut other_cli_commands = None;
         let mut pre_build = None;
         let mut post_build = None;
-        #[cfg(feature = "serve")]
+        #[cfg(feature = "mini-http-server")]
         let mut serve = None;
         let mut watch = None;
         let mut default_build_path = None;
@@ -51,7 +51,7 @@ impl Attr {
                 "other_cli_commands" => other_cli_commands = Some(path),
                 "pre_build" => pre_build = Some(path),
                 "post_build" => post_build = Some(path),
-                #[cfg(feature = "serve")]
+                #[cfg(feature = "mini-http-server")]
                 "serve" => serve = Some(path),
                 "watch" => watch = Some(path),
                 "default_build_path" => default_build_path = Some(path),
@@ -71,7 +71,7 @@ impl Attr {
             other_cli_commands,
             pre_build,
             post_build,
-            #[cfg(feature = "serve")]
+            #[cfg(feature = "mini-http-server")]
             serve,
             watch,
             pkg_name,
