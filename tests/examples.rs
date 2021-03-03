@@ -26,6 +26,6 @@ fn build_example_crates() {
     #[cfg(target_os = "linux")]
     run_cargo(
         &examples.join("backend-and-frontend"),
-        &["run", "-p", "frontend", "--", "build-container-image"],
+        &["run", "-p", "run", "--", "build-container-image"],
     );
 }
