@@ -639,7 +639,7 @@ impl Default for Hooks {
                 use tide::{Body, Request, Response};
 
                 let build_path = args.build_args().build_path().to_owned();
-                let index_path = build_path.join("index.html").to_owned();
+                let index_path = build_path.join("index.html");
 
                 server.at("/").serve_dir(args.build_args().build_path())?;
                 server.at("/").get(move |_| {
