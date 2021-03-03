@@ -52,7 +52,8 @@
 //!  *  You can use this library to build examples in the `examples/` directory of your project.
 //!     `cargo run --example your_example -- serve`. But you will need to specify the name of the
 //!     WASM crate in your project and it must be present in the workspace. Please check the
-//!     ["example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/example.rs) example.
+//!     ["run-an-example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/run-an-example.rs)
+//!     example.
 //!  *  If you want to use your own backend you will need to disable the `serve` feature by
 //!     disabling the default features. You can use the `full-restart` feature to force the backend
 //!     to also be recompiled when a file changes (otherwise only the frontend is re-compiled). You
