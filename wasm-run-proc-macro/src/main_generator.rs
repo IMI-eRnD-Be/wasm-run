@@ -129,6 +129,22 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         quote! { #pkg_name }
     });
 
+    if let Some(pkg_name) = backend_pkg_name.as_ref() {
+        let span = pkg_name.span();
+        let pkg_name = pkg_name.value();
+        if metadata
+            .packages
+            .iter()
+            .find(|x| x.name == pkg_name)
+            .is_none()
+        {
+            return Err(Error::new(
+                span,
+                format!("package `{}` not found", pkg_name),
+            ));
+        }
+    }
+
     let backend_pkg_name = backend_pkg_name
         .map(|x| quote! { Some(#x) })
         .unwrap_or_else(|| {

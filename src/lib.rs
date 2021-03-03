@@ -12,12 +12,14 @@
 //!
 //! To build your WASM project you normally need an external tool like `wasm-bindgen`, `wasm-pack`
 //! or `cargo-wasm`. `wasm-run` takes a different approach: it's a library that you install as a
-//! dependency to a binary of your project. Because of that you don't need any external tool, the
-//! tooling is built as part of your dependences.
+//! dependency to your project. Because of that you don't need any external tool, the
+//! tooling is built as part of your dependencies, which makes the CI easier to set up and reduce
+//! the hassle for new comers to start working on the project.
 //!
-//! To build your project for production you can use the command `cargo run -- build` and to run a
-//! development server that reloads automatically when the sources change you can use `cargo run --
-//! serve`.
+//! To build your project for production you can use the command `cargo run -- build`. You can also
+//! run a development server that rebuilds automatically when the code changes:
+//! `cargo run -- serve`. It doesn't rebuild everything, only the backend if the backend changed or
+//! the frontend if the frontend changed.
 //!
 //! **Please note that there is a space between `--` and `build` and between `--` and `serve`!**
 //!
@@ -29,7 +31,7 @@
 //!
 //! # Examples
 //!
-//! There are two basic examples to help you get started quickly:
+//! There are 3 basic examples to help you get started quickly:
 //!
 //!  -  a ["basic"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/basic) example for a
 //!     frontend only app that rebuilds the app when a file change is detected;
@@ -37,10 +39,14 @@
 //!     example using the web framework Rocket (backend) which uses Rocket itself to serve the file
 //!     during the development (any file change is also detected and it rebuilds and restart
 //!     automatically).
+//!  -  a
+//!  ["custom-cli-command"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/custom-cli-command)
+//!     example that adds a custom CLI command named `build-docker-image` which build the backend,
+//!     the frontend and package the whole thing in a container image.
 //!
 //! # Usage
 //!
-//! All the details about the hooks can be find on the macro [`main`].
+//! All the details about the hooks can be found on the macro [`main`].
 //!
 //! # Additional Information
 //!
@@ -110,7 +116,7 @@ const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/
 
 static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
-static PACKAGE: OnceCell<&Package> = OnceCell::new();
+static FRONTEND_PACKAGE: OnceCell<&Package> = OnceCell::new();
 static BACKEND_PACKAGE: OnceCell<Option<&Package>> = OnceCell::new();
 static HOOKS: OnceCell<Hooks> = OnceCell::new();
 
@@ -143,19 +149,19 @@ pub fn wasm_run_init(
 
     let metadata = METADATA.get().unwrap();
 
-    let package = METADATA
+    let frontend_package = METADATA
         .get()
         .unwrap()
         .packages
         .iter()
         .find(|x| x.name == pkg_name)
-        .expect("the package existence has been checked during compile time; qed");
+        .expect("the frontend package existence has been checked during compile time; qed");
 
-    PACKAGE
-        .set(package)
+    FRONTEND_PACKAGE
+        .set(frontend_package)
         .expect("the cell is initially empty; qed");
 
-    let package = PACKAGE.get().unwrap();
+    let frontend_package = FRONTEND_PACKAGE.get().unwrap();
 
     if let Some(name) = backend_pkg_name {
         let backend_package = METADATA
@@ -164,7 +170,7 @@ pub fn wasm_run_init(
             .packages
             .iter()
             .find(|x| x.name == name)
-            .expect("the package existence has been checked during compile time; qed");
+            .expect("the backend package existence has been checked during compile time; qed");
 
         BACKEND_PACKAGE
             .set(Some(backend_package))
@@ -177,7 +183,7 @@ pub fn wasm_run_init(
 
     DEFAULT_BUILD_PATH
         .set(if let Some(default_build_path) = default_build_path {
-            default_build_path(metadata, package)
+            default_build_path(metadata, frontend_package)
         } else {
             metadata.workspace_root.join("build")
         })
@@ -187,7 +193,7 @@ pub fn wasm_run_init(
         panic!("the cell is initially empty; qed");
     }
 
-    Ok((metadata, package))
+    Ok((metadata, frontend_package))
 }
 
 /// Build arguments.
@@ -227,17 +233,17 @@ pub trait BuildArgs: Downcast {
     }
 
     /// Package metadata.
-    fn package(&self) -> &Package {
-        PACKAGE
+    fn frontend_package(&self) -> &Package {
+        FRONTEND_PACKAGE
             .get()
-            .expect("package has been initialized on startup; qed")
+            .expect("frontend_package has been initialized on startup; qed")
     }
 
-    /// Backend package metadata.
+    /// Backend frontend_package metadata.
     fn backend_package(&self) -> Option<&Package> {
         BACKEND_PACKAGE
             .get()
-            .expect("package has been initialized on startup; qed")
+            .expect("frontend_package has been initialized on startup; qed")
             .to_owned()
     }
 
@@ -313,7 +319,7 @@ pub trait BuildArgs: Downcast {
     fn sass_lookup_directories(&self, _profile: BuildProfile) -> Vec<PathBuf> {
         const STYLE_CANDIDATES: &[&str] = &["assets", "styles", "css", "sass"];
 
-        let package_path = self.package().manifest_path.parent().unwrap();
+        let package_path = self.frontend_package().manifest_path.parent().unwrap();
 
         STYLE_CANDIDATES
             .iter()
@@ -492,7 +498,8 @@ pub struct Hooks {
     /// This hook will be run before starting to watch for changes in files.
     /// By default it will add all the `src/` directories and `Cargo.toml` files of all the crates
     /// in the workspace plus the `static/` directory if it exists in the frontend crate.
-    pub watch: Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
+    pub frontend_watch:
+        Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before starting to watch for changes in files.
     /// By default it will add the backend crate directory and all its dependencies. But it
@@ -548,11 +555,11 @@ impl Default for Hooks {
 
                 Ok(())
             }),
-            watch: Box::new(|args, watcher| {
+            frontend_watch: Box::new(|args, watcher| {
                 use notify::{RecursiveMode, Watcher};
 
                 let metadata = args.build_args().metadata();
-                let frontend = args.build_args().package();
+                let frontend = args.build_args().frontend_package();
                 let packages: HashMap<_, _> = metadata
                     .packages
                     .iter()
@@ -587,7 +594,7 @@ impl Default for Hooks {
 
                     let index_path = build_path.join("index.html");
                     let static_dir = args
-                        .package()
+                        .frontend_package()
                         .manifest_path
                         .parent()
                         .unwrap()
@@ -671,7 +678,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         profile = BuildProfile::Profiling;
     }
 
-    let package = args.package();
+    let frontend_package = args.frontend_package();
 
     let build_path = args.build_path();
     let _ = fs::remove_dir_all(build_path);
@@ -692,7 +699,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             "wasm32-unknown-unknown",
             "--manifest-path",
         ])
-        .arg(&package.manifest_path)
+        .arg(&frontend_package.manifest_path)
         .args(match profile {
             BuildProfile::Profiling => &["--release"] as &[&str],
             BuildProfile::Release => &["--release"],
@@ -719,7 +726,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Release => "release",
             BuildProfile::Dev => "debug",
         })
-        .join(package.name.replace("-", "_"))
+        .join(frontend_package.name.replace("-", "_"))
         .with_extension("wasm");
 
     let mut output = Bindgen::new()
@@ -810,7 +817,7 @@ fn watch_frontend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     let mut watcher: RecommendedWatcher = notify::Watcher::new(tx, time::Duration::from_secs(2))
         .context("could not initialize watcher")?;
 
-    (hooks.watch)(args, &mut watcher)?;
+    (hooks.frontend_watch)(args, &mut watcher)?;
 
     let build_args = args.build_args();
 
