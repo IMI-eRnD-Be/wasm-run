@@ -54,10 +54,11 @@
 //!     WASM crate in your project and it must be present in the workspace. Please check the
 //!     ["run-an-example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/run-an-example.rs)
 //!     example.
-//!  *  If you want to use your own backend you will need to disable the `serve` feature by
-//!     disabling the default features. You can use the `full-restart` feature to force the backend
-//!     to also be recompiled when a file changes (otherwise only the frontend is re-compiled). You
-//!     will also need to specify `run_server` to the macro arguments to run your backend.
+//!  *  If you want to use your own backend you will need to disable the `mini-http-server` feature
+//!     by disabling the default features. You can use the `full-restart` feature to force the
+//!     backend to also be recompiled when a file changes (otherwise only the frontend is
+//!     re-compiled). You will also need to specify `run_server` to the macro arguments to run your
+//!     backend.
 //!  *  You can add commands to the CLI by adding variants in the `enum`.
 //!  *  You can add parameters to the `Build` and `Serve` commands by overriding them. Please check
 //!     the documentation on the macro `main`.
