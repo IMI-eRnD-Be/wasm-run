@@ -9,14 +9,14 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     let ident = &item.ident;
     let Attr {
         other_cli_commands,
-        #[cfg(not(feature = "serve"))]
-        run_server,
         pre_build,
         post_build,
-        #[cfg(feature = "serve")]
+        #[cfg(feature = "dev-server")]
         serve,
-        watch,
-        pkg_name,
+        frontend_watch,
+        frontend_pkg_name,
+        backend_watch,
+        backend_pkg_name,
         default_build_path,
         build_args,
         serve_args,
@@ -41,14 +41,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         quote! { #ty }
     } else {
         quote! { ::wasm_run::DefaultServeArgs }
-    };
-
-    #[cfg(feature = "serve")]
-    let run_variant = quote! {};
-    #[cfg(not(feature = "serve"))]
-    let run_variant = quote! {
-        #[structopt(setting = ::wasm_run::structopt::clap::AppSettings::Hidden)]
-        RunServer(#serve_ty),
     };
 
     let span = other_cli_commands.span();
@@ -96,7 +88,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         }
     });
 
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     let serve = serve.map(|path| {
         quote_spanned! {path.span()=>
             serve: Box::new(|args, app| {
@@ -105,19 +97,29 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             }),
         }
     });
-    #[cfg(not(feature = "serve"))]
+    #[cfg(not(feature = "dev-server"))]
     let serve = quote! {};
 
-    let watch = watch.map(|path| {
+    let frontend_watch = frontend_watch.map(|path| {
         quote_spanned! {path.span()=>
-            watch: Box::new(|args, watcher| {
+            frontend_watch: Box::new(|args, watcher| {
                 let args = args.downcast_ref::<#serve_ty>().unwrap();
                 #path(args, watcher)
             }),
         }
     });
 
-    if let Some(pkg_name) = pkg_name.as_ref() {
+    #[cfg(not(feature = "dev-server"))]
+    let backend_watch = backend_watch.map(|path| {
+        quote_spanned! {path.span()=>
+            backend_watch: Box::new(|args, watcher| {
+                let args = args.downcast_ref::<#serve_ty>().unwrap();
+                #path(args, watcher)
+            }),
+        }
+    });
+
+    if let Some(pkg_name) = frontend_pkg_name.as_ref() {
         let span = pkg_name.span();
         let pkg_name = pkg_name.value();
         if metadata
@@ -133,26 +135,32 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         }
     }
 
-    let pkg_name = pkg_name.map(|x| quote! { #x }).unwrap_or_else(|| {
+    let frontend_pkg_name = frontend_pkg_name.map(|x| quote! { #x }).unwrap_or_else(|| {
         let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
         quote! { #pkg_name }
     });
 
-    #[cfg(feature = "serve")]
-    let run_server_arm = quote! {};
-    #[cfg(not(feature = "serve"))]
-    let run_server_arm = if let Some(run_server) = run_server {
-        quote_spanned! {run_server.span()=>
-            WasmRunCliCommand::RunServer(args) => #run_server(args)?,
+    if let Some(pkg_name) = backend_pkg_name.as_ref() {
+        let span = pkg_name.span();
+        let pkg_name = pkg_name.value();
+        if metadata
+            .packages
+            .iter()
+            .find(|x| x.name == pkg_name)
+            .is_none()
+        {
+            return Err(Error::new(
+                span,
+                format!("package `{}` not found", pkg_name),
+            ));
         }
-    } else {
-        quote! {
-            _ => compile_error!(
-                "without the feature `serve` you need to provide a `run_server` argument to the \
-                macro. Example: #[main(run_server = my_awesome_function)]",
-            ),
-        }
-    };
+    }
+
+    let backend_pkg_name = backend_pkg_name
+        .map(|x| quote! { Some(#x) })
+        .unwrap_or_else(|| {
+            quote! { None }
+        });
 
     let default_build_path = if let Some(path) = default_build_path {
         quote_spanned! {path.span()=>
@@ -171,7 +179,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             fn build() -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
             {
                 use ::wasm_run::BuildArgs;
-                let build_args = #build_ty::from_iter_safe(&[#pkg_name])?;
+                let build_args = #build_ty::from_iter_safe(&[#frontend_pkg_name])?;
                 build_args.run()
             }
 
@@ -182,7 +190,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 I::Item: ::std::convert::Into<::std::ffi::OsString> + Clone,
             {
                 use ::wasm_run::BuildArgs;
-                let iter = ::std::iter::once(::std::ffi::OsString::from(#pkg_name))
+                let iter = ::std::iter::once(::std::ffi::OsString::from(#frontend_pkg_name))
                     .chain(iter.into_iter().map(|x| x.into()));
                 let build_args = #build_ty::from_iter_safe(iter)?;
                 build_args.run()
@@ -204,7 +212,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             enum WasmRunCliCommand {
                 Build(#build_ty),
                 Serve(#serve_ty),
-                #run_variant
                 #[structopt(flatten)]
                 Other(#ident),
             }
@@ -216,12 +223,14 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 #pre_build
                 #post_build
                 #serve
-                #watch
+                #frontend_watch
+                #backend_watch
                 .. Hooks::default()
             };
 
             let (metadata, package) = ::wasm_run::wasm_run_init(
-                #pkg_name,
+                #frontend_pkg_name,
+                #backend_pkg_name,
                 #default_build_path,
                 hooks,
             )?;
@@ -232,7 +241,6 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                         args.run()?;
                     },
                     WasmRunCliCommand::Serve(args) => args.run()?,
-                    #run_server_arm
                     #other_cli_commands
                 }
             } else {

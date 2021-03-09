@@ -13,8 +13,8 @@ pub fn files(file: PathBuf) -> Option<NamedFile> {
     NamedFile::open(Path::new("build").join(file)).ok()
 }
 
-pub fn run() -> rocket::error::LaunchError {
+fn main() {
     rocket::ignite()
         .mount("/", rocket::routes![index, files])
-        .launch()
+        .launch();
 }

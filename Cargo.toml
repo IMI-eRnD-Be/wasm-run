@@ -14,9 +14,8 @@ categories = ["development-tools::build-utils"]
 description = "Build tool that replaces `cargo run` to build WASM projects"
 
 [features]
-default = ["serve", "prebuilt-wasm-opt"]
-serve = ["tide", "async-std", "wasm-run-proc-macro/serve"]
-full-restart = []
+default = ["mini-http-server", "prebuilt-wasm-opt"]
+mini-http-server = ["tide", "async-std", "wasm-run-proc-macro/serve"]
 prebuilt-wasm-opt = ["binary-install", "platforms", "tempfile"]
 sass = ["sass-rs", "walkdir"]
 
@@ -42,7 +41,7 @@ wasm-run-proc-macro = { path = "./wasm-run-proc-macro", version = "0.7.0"}
 
 [workspace]
 members = [
-    "examples/basic",
+    "examples/frontend-only",
     "tests/test-cargo-helper",
     "tests/test-crate-name-vs-pkg-name",
     "tests/test-default-build-path",

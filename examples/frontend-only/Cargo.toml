@@ -1,5 +1,5 @@
 [package]
-name = "basic"
+name = "frontend-only"
 version = "0.1.0"
 authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
 edition = "2018"
@@ -13,7 +13,3 @@ wasm-bindgen = "^0.2"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wasm-run = { path = "../.." }
 structopt = "0.3"
-
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"

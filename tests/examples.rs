@@ -21,11 +21,18 @@ fn run_cargo(path: &Path, args: &[&str]) {
 #[test]
 fn build_example_crates() {
     let examples = Path::new("examples");
-    run_cargo(&examples.join("basic"), &["build"]);
+    run_cargo(
+        &examples,
+        &["run", "--example", "run-an-example", "--", "build"],
+    );
+    run_cargo(
+        &examples.join("frontend-only"),
+        &["build", "--bin", "frontend-only"],
+    );
     run_cargo(&examples.join("backend-and-frontend"), &["build"]);
     #[cfg(target_os = "linux")]
     run_cargo(
-        &examples.join("backend-and-frontend"),
-        &["run", "-p", "frontend", "--", "build-container-image"],
+        &examples.join("custom-cli-command"),
+        &["run", "-p", "run", "--", "build-container-image"],
     );
 }

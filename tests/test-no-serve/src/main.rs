@@ -1,10 +1,6 @@
 use structopt::StructOpt;
 use wasm_run::prelude::*;
 
-#[wasm_run::main(run_server = run_server)]
+#[wasm_run::main()]
 #[derive(StructOpt, Debug)]
 enum Cli {}
-
-fn run_server(_args: DefaultServeArgs) -> anyhow::Result<()> {
-    todo!()
-}
