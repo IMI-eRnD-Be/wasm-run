@@ -5,11 +5,11 @@ pub struct Attr {
     pub other_cli_commands: Option<Path>,
     pub pre_build: Option<Path>,
     pub post_build: Option<Path>,
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     pub serve: Option<Path>,
     pub frontend_watch: Option<Path>,
     pub frontend_pkg_name: Option<LitStr>,
-    #[cfg(not(feature = "mini-http-server"))]
+    #[cfg(not(feature = "dev-server"))]
     pub backend_watch: Option<Path>,
     pub backend_pkg_name: Option<LitStr>,
     pub default_build_path: Option<Path>,
@@ -34,10 +34,10 @@ impl Attr {
         let mut other_cli_commands = None;
         let mut pre_build = None;
         let mut post_build = None;
-        #[cfg(feature = "mini-http-server")]
+        #[cfg(feature = "dev-server")]
         let mut serve = None;
         let mut frontend_watch = None;
-        #[cfg(not(feature = "mini-http-server"))]
+        #[cfg(not(feature = "dev-server"))]
         let mut backend_watch = None;
         let mut default_build_path = None;
         let mut build_args = None;
@@ -55,9 +55,9 @@ impl Attr {
                 "other_cli_commands" => other_cli_commands = Some(path),
                 "pre_build" => pre_build = Some(path),
                 "post_build" => post_build = Some(path),
-                #[cfg(feature = "mini-http-server")]
+                #[cfg(feature = "dev-server")]
                 "serve" => serve = Some(path),
-                #[cfg(not(feature = "mini-http-server"))]
+                #[cfg(not(feature = "dev-server"))]
                 "backend_watch" => backend_watch = Some(path),
                 "frontend_watch" => frontend_watch = Some(path),
                 "default_build_path" => default_build_path = Some(path),
@@ -77,11 +77,11 @@ impl Attr {
             other_cli_commands,
             pre_build,
             post_build,
-            #[cfg(feature = "mini-http-server")]
+            #[cfg(feature = "dev-server")]
             serve,
             frontend_watch,
             frontend_pkg_name,
-            #[cfg(not(feature = "mini-http-server"))]
+            #[cfg(not(feature = "dev-server"))]
             backend_watch,
             backend_pkg_name,
             default_build_path,

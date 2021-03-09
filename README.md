@@ -56,7 +56,7 @@ All the details about the hooks can be found on the macro [`main`].
     WASM crate in your project and it must be present in the workspace. Please check the
     ["run-an-example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/run-an-example.rs)
     example.
- *  If you want to use your own backend you will need to disable the `mini-http-server` feature
+ *  If you want to use your own backend you will need to disable the `dev-server` feature
     by disabling the default features. You can use the `full-restart` feature to force the
     backend to also be recompiled when a file changes (otherwise only the frontend is
     re-compiled). You will also need to specify `run_server` to the macro arguments to run your

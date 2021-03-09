@@ -54,7 +54,7 @@
 //!     WASM crate in your project and it must be present in the workspace. Please check the
 //!     ["run-an-example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/run-an-example.rs)
 //!     example.
-//!  *  If you want to use your own backend you will need to disable the `mini-http-server` feature
+//!  *  If you want to use your own backend you will need to disable the `dev-server` feature
 //!     by disabling the default features. You can use the `full-restart` feature to force the
 //!     backend to also be recompiled when a file changes (otherwise only the frontend is
 //!     re-compiled). You will also need to specify `run_server` to the macro arguments to run your
@@ -99,13 +99,13 @@ use std::io::BufReader;
 use std::iter;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
-#[cfg(feature = "mini-http-server")]
+#[cfg(feature = "dev-server")]
 use std::pin::Pin;
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::mpsc;
 use std::time;
 use structopt::StructOpt;
-#[cfg(feature = "mini-http-server")]
+#[cfg(feature = "dev-server")]
 use tide::Server;
 
 pub use wasm_run_proc_macro::*;
@@ -391,17 +391,17 @@ pub struct DefaultServeArgs {
 /// A trait that allows overriding the `serve` command.
 pub trait ServeArgs: Downcast + Send {
     /// Activate HTTP logs.
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     fn log(&self) -> bool;
 
     /// IP address to bind.
     ///
     /// Use 0.0.0.0 to expose the server to your network.
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     fn ip(&self) -> &str;
 
     /// Port number.
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     fn port(&self) -> u16;
 
     /// Build arguments.
@@ -416,7 +416,7 @@ pub trait ServeArgs: Downcast + Send {
         // NOTE: the first step for serving is to call `build` a first time. The build directory
         //       must be present before we start watching files there.
         build(BuildProfile::Dev, self.build_args(), hooks)?;
-        #[cfg(feature = "mini-http-server")]
+        #[cfg(feature = "dev-server")]
         {
             async_std::task::block_on(async {
                 let t1 = async_std::task::spawn(serve_frontend(&self, hooks)?);
@@ -425,7 +425,7 @@ pub trait ServeArgs: Downcast + Send {
                 Err(anyhow!("server and watcher unexpectedly exited"))
             })
         }
-        #[cfg(not(feature = "mini-http-server"))]
+        #[cfg(not(feature = "dev-server"))]
         {
             use std::sync::Arc;
             use std::thread;
@@ -451,17 +451,17 @@ pub trait ServeArgs: Downcast + Send {
 impl_downcast!(ServeArgs);
 
 impl ServeArgs for DefaultServeArgs {
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     fn log(&self) -> bool {
         self.log
     }
 
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     fn ip(&self) -> &str {
         &self.ip
     }
 
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     fn port(&self) -> u16 {
         self.port
     }
@@ -492,7 +492,7 @@ pub struct Hooks {
 
     /// This hook will be run before running the HTTP server.
     /// By default it will add routes to the files in the build directory.
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     #[allow(clippy::type_complexity)]
     pub serve: Box<dyn Fn(&dyn ServeArgs, &mut Server<()>) -> Result<()> + Send + Sync>,
 
@@ -642,7 +642,7 @@ impl Default for Hooks {
                     Ok(())
                 },
             ),
-            #[cfg(feature = "mini-http-server")]
+            #[cfg(feature = "dev-server")]
             serve: Box::new(|args, server| {
                 use tide::{Body, Request, Response};
 
@@ -752,7 +752,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     Ok(())
 }
 
-#[cfg(feature = "mini-http-server")]
+#[cfg(feature = "dev-server")]
 fn serve_frontend(
     args: &dyn ServeArgs,
     hooks: &Hooks,
@@ -778,7 +778,7 @@ fn serve_frontend(
     ))
 }
 
-#[cfg(not(feature = "mini-http-server"))]
+#[cfg(not(feature = "dev-server"))]
 fn watch_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
     let (tx, rx) = mpsc::channel();
 
@@ -1011,20 +1011,20 @@ pub mod prelude {
     pub use wasm_run_proc_macro::*;
 
     pub use anyhow;
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     pub use async_std;
     pub use cargo_metadata;
     pub use cargo_metadata::{Message, Metadata, Package};
     pub use fs_extra;
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     pub use futures;
     pub use notify;
     pub use notify::RecommendedWatcher;
     #[cfg(feature = "sass")]
     pub use sass_rs;
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     pub use tide;
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     pub use tide::Server;
 
     pub use super::{

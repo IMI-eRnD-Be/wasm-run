@@ -11,7 +11,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         other_cli_commands,
         pre_build,
         post_build,
-        #[cfg(feature = "mini-http-server")]
+        #[cfg(feature = "dev-server")]
         serve,
         frontend_watch,
         frontend_pkg_name,
@@ -88,7 +88,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         }
     });
 
-    #[cfg(feature = "mini-http-server")]
+    #[cfg(feature = "dev-server")]
     let serve = serve.map(|path| {
         quote_spanned! {path.span()=>
             serve: Box::new(|args, app| {
@@ -97,7 +97,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             }),
         }
     });
-    #[cfg(not(feature = "mini-http-server"))]
+    #[cfg(not(feature = "dev-server"))]
     let serve = quote! {};
 
     let frontend_watch = frontend_watch.map(|path| {
@@ -109,7 +109,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         }
     });
 
-    #[cfg(not(feature = "mini-http-server"))]
+    #[cfg(not(feature = "dev-server"))]
     let backend_watch = backend_watch.map(|path| {
         quote_spanned! {path.span()=>
             backend_watch: Box::new(|args, watcher| {
