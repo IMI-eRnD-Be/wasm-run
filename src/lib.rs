@@ -12,12 +12,14 @@
 //!
 //! To build your WASM project you normally need an external tool like `wasm-bindgen`, `wasm-pack`
 //! or `cargo-wasm`. `wasm-run` takes a different approach: it's a library that you install as a
-//! dependency to a binary of your project. Because of that you don't need any external tool, the
-//! tooling is built as part of your dependences.
+//! dependency to your project. Because of that you don't need any external tool, the
+//! tooling is built as part of your dependencies, which makes the CI easier to set up and reduce
+//! the hassle for new comers to start working on the project.
 //!
-//! To build your project for production you can use the command `cargo run -- build` and to run a
-//! development server that reloads automatically when the sources change you can use `cargo run --
-//! serve`.
+//! To build your project for production you can use the command `cargo run -- build`. You can also
+//! run a development server that rebuilds automatically when the code changes:
+//! `cargo run -- serve`. It doesn't rebuild everything, only the backend if the backend changed or
+//! the frontend if the frontend changed.
 //!
 //! **Please note that there is a space between `--` and `build` and between `--` and `serve`!**
 //!
@@ -29,7 +31,7 @@
 //!
 //! # Examples
 //!
-//! There are two basic examples to help you get started quickly:
+//! There are 3 basic examples to help you get started quickly:
 //!
 //!  -  a ["basic"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/basic) example for a
 //!     frontend only app that rebuilds the app when a file change is detected;
@@ -37,21 +39,26 @@
 //!     example using the web framework Rocket (backend) which uses Rocket itself to serve the file
 //!     during the development (any file change is also detected and it rebuilds and restart
 //!     automatically).
+//!  -  a ["custom-cli-command"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/custom-cli-command)
+//!     example that adds a custom CLI command named `build-docker-image` which build the backend,
+//!     the frontend and package the whole thing in a container image.
 //!
 //! # Usage
 //!
-//! All the details about the hooks can be find on the macro [`main`].
+//! All the details about the hooks can be found on the macro [`main`].
 //!
 //! # Additional Information
 //!
 //!  *  You can use this library to build examples in the `examples/` directory of your project.
 //!     `cargo run --example your_example -- serve`. But you will need to specify the name of the
 //!     WASM crate in your project and it must be present in the workspace. Please check the
-//!     ["example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/example.rs) example.
-//!  *  If you want to use your own backend you will need to disable the `serve` feature by
-//!     disabling the default features. You can use the `full-restart` feature to force the backend
-//!     to also be recompiled when a file changes (otherwise only the frontend is re-compiled). You
-//!     will also need to specify `run_server` to the macro arguments to run your backend.
+//!     ["run-an-example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/run-an-example.rs)
+//!     example.
+//!  *  If you want to use your own backend you will need to disable the `dev-server` feature
+//!     by disabling the default features. You can use the `full-restart` feature to force the
+//!     backend to also be recompiled when a file changes (otherwise only the frontend is
+//!     re-compiled). You will also need to specify `run_server` to the macro arguments to run your
+//!     backend.
 //!  *  You can add commands to the CLI by adding variants in the `enum`.
 //!  *  You can add parameters to the `Build` and `Serve` commands by overriding them. Please check
 //!     the documentation on the macro `main`.
@@ -80,20 +87,25 @@
 #[cfg(feature = "prebuilt-wasm-opt")]
 mod prebuilt_wasm_opt;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use fs_extra::dir;
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::BufReader;
+use std::iter;
+use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
-#[cfg(feature = "serve")]
+#[cfg(feature = "dev-server")]
 use std::pin::Pin;
 use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::mpsc;
+use std::time;
 use structopt::StructOpt;
-#[cfg(feature = "serve")]
+#[cfg(feature = "dev-server")]
 use tide::Server;
 
 pub use wasm_run_proc_macro::*;
@@ -105,7 +117,8 @@ const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/
 
 static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
-static PACKAGE: OnceCell<&Package> = OnceCell::new();
+static FRONTEND_PACKAGE: OnceCell<&Package> = OnceCell::new();
+static BACKEND_PACKAGE: OnceCell<Option<&Package>> = OnceCell::new();
 static HOOKS: OnceCell<Hooks> = OnceCell::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -123,9 +136,10 @@ pub enum BuildProfile {
 #[doc(hidden)]
 pub fn wasm_run_init(
     pkg_name: &str,
+    backend_pkg_name: Option<&str>,
     default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
     hooks: Hooks,
-) -> Result<(&Metadata, &Package)> {
+) -> Result<(&'static Metadata, &'static Package)> {
     let metadata = MetadataCommand::new()
         .exec()
         .context("this binary is not meant to be ran outside of its workspace")?;
@@ -136,23 +150,41 @@ pub fn wasm_run_init(
 
     let metadata = METADATA.get().unwrap();
 
-    let package = METADATA
+    let frontend_package = METADATA
         .get()
         .unwrap()
         .packages
         .iter()
         .find(|x| x.name == pkg_name)
-        .expect("the package existence has been checked during compile time; qed");
+        .expect("the frontend package existence has been checked during compile time; qed");
 
-    PACKAGE
-        .set(package)
+    FRONTEND_PACKAGE
+        .set(frontend_package)
         .expect("the cell is initially empty; qed");
 
-    let package = PACKAGE.get().unwrap();
+    let frontend_package = FRONTEND_PACKAGE.get().unwrap();
+
+    if let Some(name) = backend_pkg_name {
+        let backend_package = METADATA
+            .get()
+            .unwrap()
+            .packages
+            .iter()
+            .find(|x| x.name == name)
+            .expect("the backend package existence has been checked during compile time; qed");
+
+        BACKEND_PACKAGE
+            .set(Some(backend_package))
+            .expect("the cell is initially empty; qed");
+    } else {
+        BACKEND_PACKAGE
+            .set(None)
+            .expect("the cell is initially empty; qed");
+    }
 
     DEFAULT_BUILD_PATH
         .set(if let Some(default_build_path) = default_build_path {
-            default_build_path(metadata, package)
+            default_build_path(metadata, frontend_package)
         } else {
             metadata.workspace_root.join("build")
         })
@@ -162,7 +194,7 @@ pub fn wasm_run_init(
         panic!("the cell is initially empty; qed");
     }
 
-    Ok((metadata, package))
+    Ok((metadata, frontend_package))
 }
 
 /// Build arguments.
@@ -202,10 +234,18 @@ pub trait BuildArgs: Downcast {
     }
 
     /// Package metadata.
-    fn package(&self) -> &Package {
-        PACKAGE
+    fn frontend_package(&self) -> &Package {
+        FRONTEND_PACKAGE
             .get()
-            .expect("package has been initialized on startup; qed")
+            .expect("frontend_package has been initialized on startup; qed")
+    }
+
+    /// Backend frontend_package metadata.
+    fn backend_package(&self) -> Option<&Package> {
+        BACKEND_PACKAGE
+            .get()
+            .expect("frontend_package has been initialized on startup; qed")
+            .to_owned()
     }
 
     /// Create a profiling build. Enable optimizations and debug info.
@@ -280,7 +320,7 @@ pub trait BuildArgs: Downcast {
     fn sass_lookup_directories(&self, _profile: BuildProfile) -> Vec<PathBuf> {
         const STYLE_CANDIDATES: &[&str] = &["assets", "styles", "css", "sass"];
 
-        let package_path = self.package().manifest_path.parent().unwrap();
+        let package_path = self.frontend_package().manifest_path.parent().unwrap();
 
         STYLE_CANDIDATES
             .iter()
@@ -306,7 +346,7 @@ pub trait BuildArgs: Downcast {
     where
         Self: Sized + 'static,
     {
-        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
+        let hooks = HOOKS.get().expect("wasm_run_init() has not been called");
         build(BuildProfile::Release, &self, hooks)?;
         Ok(self.build_path().to_owned())
     }
@@ -351,17 +391,17 @@ pub struct DefaultServeArgs {
 /// A trait that allows overriding the `serve` command.
 pub trait ServeArgs: Downcast + Send {
     /// Activate HTTP logs.
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     fn log(&self) -> bool;
 
     /// IP address to bind.
     ///
     /// Use 0.0.0.0 to expose the server to your network.
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     fn ip(&self) -> &str;
 
     /// Port number.
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     fn port(&self) -> u16;
 
     /// Build arguments.
@@ -370,24 +410,40 @@ pub trait ServeArgs: Downcast + Send {
     /// Run the `serve` command.
     fn run(self) -> Result<()>
     where
-        Self: Sized + 'static,
+        Self: Sync + Sized + 'static,
     {
-        let hooks = HOOKS.get().expect("we called wasm_run_init() first; qed");
+        let hooks = HOOKS.get().expect("wasm_run_init() has not been called");
         // NOTE: the first step for serving is to call `build` a first time. The build directory
         //       must be present before we start watching files there.
         build(BuildProfile::Dev, self.build_args(), hooks)?;
-        #[cfg(feature = "serve")]
+        #[cfg(feature = "dev-server")]
         {
             async_std::task::block_on(async {
-                let t1 = async_std::task::spawn(serve(&self, hooks)?);
-                let t2 = async_std::task::spawn_blocking(move || watch(&self, hooks));
+                let t1 = async_std::task::spawn(serve_frontend(&self, hooks)?);
+                let t2 = async_std::task::spawn_blocking(move || watch_frontend(&self, hooks));
                 futures::try_join!(t1, t2)?;
-                Ok(())
+                Err(anyhow!("server and watcher unexpectedly exited"))
             })
         }
-        #[cfg(not(feature = "serve"))]
+        #[cfg(not(feature = "dev-server"))]
         {
-            watch(&self, hooks)
+            use std::sync::Arc;
+            use std::thread;
+
+            if self.build_args().backend_package().is_none() {
+                bail!("missing backend crate name");
+            }
+
+            let args = Arc::new(self);
+            let t1 = {
+                let args = Arc::clone(&args);
+                thread::spawn(move || watch_frontend(&*args, hooks))
+            };
+            let t2 = thread::spawn(move || watch_backend(&*args, hooks));
+            let _ = t1.join();
+            let _ = t2.join();
+
+            Err(anyhow!("server and watcher unexpectedly exited"))
         }
     }
 }
@@ -395,17 +451,17 @@ pub trait ServeArgs: Downcast + Send {
 impl_downcast!(ServeArgs);
 
 impl ServeArgs for DefaultServeArgs {
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     fn log(&self) -> bool {
         self.log
     }
 
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     fn ip(&self) -> &str {
         &self.ip
     }
 
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     fn port(&self) -> u16 {
         self.port
     }
@@ -436,42 +492,90 @@ pub struct Hooks {
 
     /// This hook will be run before running the HTTP server.
     /// By default it will add routes to the files in the build directory.
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     #[allow(clippy::type_complexity)]
     pub serve: Box<dyn Fn(&dyn ServeArgs, &mut Server<()>) -> Result<()> + Send + Sync>,
 
     /// This hook will be run before starting to watch for changes in files.
     /// By default it will add all the `src/` directories and `Cargo.toml` files of all the crates
     /// in the workspace plus the `static/` directory if it exists in the frontend crate.
-    pub watch: Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
+    pub frontend_watch:
+        Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
+
+    /// This hook will be run before starting to watch for changes in files.
+    /// By default it will add the backend crate directory and all its dependencies. But it
+    /// excludes the target directory.
+    pub backend_watch:
+        Box<dyn Fn(&dyn ServeArgs, &mut RecommendedWatcher) -> Result<()> + Send + Sync>,
+
+    /// This hook will be run before (re-)starting the backend.
+    /// You can tweak the cargo command that is run here: adding/removing environment variables or
+    /// adding arguments.
+    /// By default it will do `cargo run -p <backend_crate>`.
+    pub backend_command: Box<dyn Fn(&dyn ServeArgs, &mut Command) -> Result<()> + Send + Sync>,
 }
 
 impl Default for Hooks {
     fn default() -> Self {
         Self {
-            watch: Box::new(|args, watcher| {
+            backend_command: Box::new(|args, command| {
+                command.args(&[
+                    "run",
+                    "-p",
+                    &args
+                        .build_args()
+                        .backend_package()
+                        .context("missing backend crate name")?
+                        .name,
+                ]);
+                Ok(())
+            }),
+            backend_watch: Box::new(|args, watcher| {
                 use notify::{RecursiveMode, Watcher};
-                use std::collections::HashSet;
-                use std::iter::FromIterator;
 
                 let metadata = args.build_args().metadata();
-
-                let _ = watcher.watch("index.html", RecursiveMode::Recursive);
-                let _ = watcher.watch("static", RecursiveMode::Recursive);
-
+                let backend = args
+                    .build_args()
+                    .backend_package()
+                    .context("missing backend crate name")?;
+                let packages: HashMap<_, _> = metadata
+                    .packages
+                    .iter()
+                    .map(|x| (x.name.as_str(), x))
+                    .collect();
                 let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
 
-                for package in metadata.packages.iter().filter(|x| members.contains(&x.id)) {
-                    let _ = watcher.watch(&package.manifest_path, RecursiveMode::Recursive);
-                    let _ = watcher.watch(
-                        package.manifest_path.parent().unwrap().join("src"),
-                        RecursiveMode::Recursive,
-                    );
-                    let _ = watcher.watch(
-                        package.manifest_path.parent().unwrap().join("build.rs"),
-                        RecursiveMode::Recursive,
-                    );
-                }
+                backend
+                    .dependencies
+                    .iter()
+                    .map(|x| packages.get(x.name.as_str()).unwrap())
+                    .filter(|x| members.contains(&x.id))
+                    .map(|x| x.manifest_path.parent().unwrap())
+                    .chain(iter::once(backend.manifest_path.parent().unwrap()))
+                    .try_for_each(|x| watcher.watch(x, RecursiveMode::Recursive))?;
+
+                Ok(())
+            }),
+            frontend_watch: Box::new(|args, watcher| {
+                use notify::{RecursiveMode, Watcher};
+
+                let metadata = args.build_args().metadata();
+                let frontend = args.build_args().frontend_package();
+                let packages: HashMap<_, _> = metadata
+                    .packages
+                    .iter()
+                    .map(|x| (x.name.as_str(), x))
+                    .collect();
+                let members: HashSet<_> = HashSet::from_iter(&metadata.workspace_members);
+
+                frontend
+                    .dependencies
+                    .iter()
+                    .map(|x| packages.get(x.name.as_str()).unwrap())
+                    .filter(|x| members.contains(&x.id))
+                    .map(|x| x.manifest_path.parent().unwrap())
+                    .chain(iter::once(frontend.manifest_path.parent().unwrap()))
+                    .try_for_each(|x| watcher.watch(x, RecursiveMode::Recursive))?;
 
                 Ok(())
             }),
@@ -491,7 +595,7 @@ impl Default for Hooks {
 
                     let index_path = build_path.join("index.html");
                     let static_dir = args
-                        .package()
+                        .frontend_package()
                         .manifest_path
                         .parent()
                         .unwrap()
@@ -538,16 +642,28 @@ impl Default for Hooks {
                     Ok(())
                 },
             ),
-            #[cfg(feature = "serve")]
+            #[cfg(feature = "dev-server")]
             serve: Box::new(|args, server| {
-                use tide::{Body, Response};
+                use tide::{Body, Request, Response};
 
-                let index_path = args.build_args().build_path().join("index.html");
+                let build_path = args.build_args().build_path().to_owned();
+                let index_path = build_path.join("index.html");
 
                 server.at("/").serve_dir(args.build_args().build_path())?;
                 server.at("/").get(move |_| {
                     let index_path = index_path.clone();
                     async move { Ok(Response::from(Body::from_file(index_path).await?)) }
+                });
+                server.at("/*path").get(move |req: Request<()>| {
+                    let build_path = build_path.clone();
+                    async move {
+                        match Body::from_file(build_path.join(req.param("path").unwrap())).await {
+                            Ok(body) => Ok(Response::from(body)),
+                            Err(_) => Ok(Response::from(
+                                Body::from_file(build_path.join("index.html")).await?,
+                            )),
+                        }
+                    }
                 });
 
                 Ok(())
@@ -563,7 +679,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         profile = BuildProfile::Profiling;
     }
 
-    let package = args.package();
+    let frontend_package = args.frontend_package();
 
     let build_path = args.build_path();
     let _ = fs::remove_dir_all(build_path);
@@ -584,7 +700,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             "wasm32-unknown-unknown",
             "--manifest-path",
         ])
-        .arg(&package.manifest_path)
+        .arg(&frontend_package.manifest_path)
         .args(match profile {
             BuildProfile::Profiling => &["--release"] as &[&str],
             BuildProfile::Release => &["--release"],
@@ -611,7 +727,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Release => "release",
             BuildProfile::Dev => "debug",
         })
-        .join(package.name.replace("-", "_"))
+        .join(frontend_package.name.replace("-", "_"))
         .with_extension("wasm");
 
     let mut output = Bindgen::new()
@@ -637,8 +753,8 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     Ok(())
 }
 
-#[cfg(feature = "serve")]
-fn serve(
+#[cfg(feature = "dev-server")]
+fn serve_frontend(
     args: &dyn ServeArgs,
     hooks: &Hooks,
 ) -> Result<Pin<Box<impl std::future::Future<Output = Result<()>> + Send + 'static>>> {
@@ -663,79 +779,74 @@ fn serve(
     ))
 }
 
-fn watch(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
-    use notify::{DebouncedEvent, Watcher};
-    use std::sync::mpsc::channel;
-    use std::time::Duration;
+#[cfg(not(feature = "dev-server"))]
+fn watch_backend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
+    let (tx, rx) = mpsc::channel();
 
-    let (tx, rx) = channel();
+    let mut watcher: RecommendedWatcher = notify::Watcher::new(tx, time::Duration::from_secs(2))
+        .context("could not initialize watcher")?;
 
-    let mut watcher: RecommendedWatcher =
-        Watcher::new(tx, Duration::from_secs(2)).context("could not initialize watcher")?;
+    (hooks.backend_watch)(args, &mut watcher)?;
 
-    (hooks.watch)(args, &mut watcher)?;
+    struct BackgroundProcess(std::process::Child);
+
+    impl Drop for BackgroundProcess {
+        fn drop(&mut self) {
+            // TODO: cleaner exit on Unix
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    let run_server = || -> Result<BackgroundProcess> {
+        let mut command = Command::new("cargo");
+        (hooks.backend_command)(args, &mut command)?;
+        Ok(command.spawn().map(BackgroundProcess)?)
+    };
+
+    let mut process_guard = Some(run_server()?);
+
+    watch_loop(args, rx, || {
+        drop(process_guard.take());
+        process_guard.replace(run_server()?);
+        Ok(())
+    });
+}
+
+fn watch_frontend(args: &dyn ServeArgs, hooks: &Hooks) -> Result<()> {
+    let (tx, rx) = mpsc::channel();
+
+    let mut watcher: RecommendedWatcher = notify::Watcher::new(tx, time::Duration::from_secs(2))
+        .context("could not initialize watcher")?;
+
+    (hooks.frontend_watch)(args, &mut watcher)?;
 
     let build_args = args.build_args();
 
-    #[cfg(not(feature = "serve"))]
-    fn run_server() -> std::io::Result<impl std::any::Any> {
-        struct ServerProcess(std::process::Child);
+    watch_loop(args, rx, || build(BuildProfile::Dev, build_args, hooks));
+}
 
-        impl Drop for ServerProcess {
-            fn drop(&mut self) {
-                // TODO: cleaner exit on Unix
-                let _ = self.0.kill();
-                let _ = self.0.wait();
-            }
-        }
-
-        let mut found = false;
-        let args = std::env::args().skip(1).map(|x| {
-            if !found && x == "serve" {
-                found = true;
-                "run-server".to_owned()
-            } else {
-                x
-            }
-        });
-
-        Command::new(std::env::current_exe().unwrap())
-            .args(args)
-            .spawn()
-            .map(ServerProcess)
-    }
-
-    #[cfg(not(feature = "serve"))]
-    let mut process_guard = Some(run_server()?);
-
+fn watch_loop(
+    args: &dyn ServeArgs,
+    rx: mpsc::Receiver<notify::DebouncedEvent>,
+    mut callback: impl FnMut() -> Result<()>,
+) -> ! {
     loop {
-        use DebouncedEvent::*;
+        use notify::DebouncedEvent::*;
 
-        match rx.recv() {
-            Ok(Create(_)) | Ok(Write(_)) | Ok(Remove(_)) | Ok(Rename(_, _)) | Ok(Rescan) => {
-                #[cfg(all(feature = "full-restart", unix, not(feature = "serve")))]
-                {
-                    use std::os::unix::process::CommandExt;
-
-                    drop(build_args);
-                    drop(process_guard.take());
-
-                    let err = Command::new("cargo")
-                        .args(&["run", "--"])
-                        .args(std::env::args_os().skip(1))
-                        .exec();
-                    eprintln!("could not restart process: {}", err);
-                }
-                #[cfg(not(all(feature = "full-restart", unix, not(feature = "serve"))))]
-                {
-                    if let Err(err) = build(BuildProfile::Dev, build_args, hooks) {
-                        eprintln!("{}", err);
-                    }
-                    #[cfg(not(feature = "serve"))]
-                    match run_server() {
-                        Ok(guard) => drop(process_guard.replace(guard)),
-                        Err(err) => eprintln!("running server error: {}", err),
-                    }
+        let message = rx.recv();
+        match &message {
+            Ok(Create(path)) | Ok(Write(path)) | Ok(Remove(path)) | Ok(Rename(_, path))
+                if !path.starts_with(args.build_args().build_path())
+                    && !path.starts_with(args.build_args().target_path())
+                    && !path
+                        .file_name()
+                        .and_then(|x| x.to_str())
+                        .map(|x| x.starts_with('.'))
+                        .unwrap_or(false) =>
+            {
+                if let Err(err) = callback() {
+                    eprintln!("{}", err);
                 }
             }
             Ok(_) => {}
@@ -901,20 +1012,20 @@ pub mod prelude {
     pub use wasm_run_proc_macro::*;
 
     pub use anyhow;
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     pub use async_std;
     pub use cargo_metadata;
     pub use cargo_metadata::{Message, Metadata, Package};
     pub use fs_extra;
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     pub use futures;
     pub use notify;
     pub use notify::RecommendedWatcher;
     #[cfg(feature = "sass")]
     pub use sass_rs;
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     pub use tide;
-    #[cfg(feature = "serve")]
+    #[cfg(feature = "dev-server")]
     pub use tide::Server;
 
     pub use super::{
