@@ -84,6 +84,11 @@
 
 #![warn(missing_docs)]
 
+/// Merge of web-bundler.
+///
+/// TODO: This is the simple first iteration, we need to integrate properly.
+#[cfg(feature = "sass")]
+pub mod bundler;
 #[cfg(feature = "prebuilt-wasm-opt")]
 mod prebuilt_wasm_opt;
 
@@ -283,8 +288,9 @@ pub trait BuildArgs: Downcast {
                 Ok(x) => Some(x),
                 Err(err) => {
                     eprintln!(
-                        "WARNING: could not walk into directory: `{}`",
-                        input_dir.display()
+                        "WARNING: could not walk into directory `{}`: {}",
+                        input_dir.display(),
+                        err,
                     );
                     None
                 }

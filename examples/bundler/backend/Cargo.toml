@@ -1,0 +1,27 @@
+[package]
+name = "backend"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+warp = "0.3"
+mime_guess = "2"
+
+[dependencies.tokio]
+version = "1"
+features = ["full"]
+
+[dependencies.rust-embed]
+version="5"
+features= ["compression", "interpolate-folder-path"]
+
+# depend on the frontend project here not because we actually use it,
+# but because we want to trigger a rerun of the build.rs script if
+# anything in it changes.
+[build-dependencies.frontend]
+path = "../frontend"
+
+[build-dependencies.wasm-run]
+path = "../../.."
+default-features = false
+features = ["sass"]
