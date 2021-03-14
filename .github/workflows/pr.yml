@@ -22,11 +22,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
+      - name: cargo build examples
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace -- build_example
+
       - name: cargo test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace
+          args: --workspace -- test_crates
 
       - name: rustfmt
         uses: actions-rs/cargo@v1
@@ -49,17 +55,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1
 
-      - name: Install target wasm32-unknown-unknown
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
       - name: cargo test (windows)
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace
+          args: --workspace -- test_crates
 
   build-osx-x86:
     needs: [cargo-test-and-lint]
@@ -70,14 +70,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1
 
-      - name: Install target wasm32-unknown-unknown
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
       - name: cargo test (OSX x86)
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace
+          args: --workspace -- test_crates
