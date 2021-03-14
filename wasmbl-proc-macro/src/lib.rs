@@ -1,4 +1,4 @@
-//! See the crate `wasm-run` for documentation.
+//! See the crate `wasmbl` for documentation.
 
 mod attr_parser;
 mod main_generator;
@@ -10,7 +10,7 @@ use syn::{parse_macro_input, ItemEnum};
 /// Makes an entrypoint to your binary (not WASM).
 ///
 /// ```ignore
-/// #[wasm_run::main(
+/// #[wasmbl::main(
 ///     pre_build = my_pre_build_function,
 ///     post_build = my_post_build_function,
 ///     build_args = my_build_args_struct,
@@ -48,20 +48,20 @@ use syn::{parse_macro_input, ItemEnum};
 /// positional argument:
 ///
 /// ```ignore
-/// #[wasm_run::main("my-frontend-package")]
+/// #[wasmbl::main("my-frontend-package")]
 /// enum Cli {}
 /// ```
 ///
 /// And the backend package in the second positional argument:
 ///
 /// ```ignore
-/// #[wasm_run::main("my-frontend-package", "my-backend-package")]
+/// #[wasmbl::main("my-frontend-package", "my-backend-package")]
 /// enum Cli {}
 /// ```
 ///
 /// # Examples
 ///
-/// See the [`examples/`](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/custom-cli-command)
+/// See the [`examples/`](https://github.com/IMI-eRnD-Be/wasmbl/tree/main/examples/custom-cli-command)
 /// directory.
 #[proc_macro_attribute]
 pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {

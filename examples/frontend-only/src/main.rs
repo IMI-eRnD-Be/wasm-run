@@ -1,5 +1,5 @@
 use structopt::StructOpt;
 
-#[wasm_run::main]
+#[wasmbl::main]
 #[derive(StructOpt, Debug)]
 enum Cli {}

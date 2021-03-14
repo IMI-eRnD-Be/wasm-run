@@ -21,7 +21,7 @@ features= ["compression", "interpolate-folder-path"]
 [build-dependencies.frontend]
 path = "../frontend"
 
-[build-dependencies.wasm-run]
+[build-dependencies.wasmbl]
 path = "../../.."
 default-features = false
 features = ["sass"]

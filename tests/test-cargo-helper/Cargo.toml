@@ -11,5 +11,5 @@ crate-type = ["cdylib"]
 wasm-bindgen = "^0.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-wasm-run = { path = "../.." }
+wasmbl = { path = "../.." }
 structopt = "0.3"

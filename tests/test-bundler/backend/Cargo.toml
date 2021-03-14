@@ -15,7 +15,7 @@ features = ["full"]
 version="5"
 features = ["compression", "interpolate-folder-path"]
 
-[build-dependencies.wasm-run]
+[build-dependencies.wasmbl]
 path = "../../.."
 default-features = false
 features = ["sass"]

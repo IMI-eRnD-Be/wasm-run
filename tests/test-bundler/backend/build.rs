@@ -1,5 +1,5 @@
 use std::{env, path::PathBuf, process};
-use wasm_run::bundler::WebBundlerOpt;
+use wasmbl::bundler::WebBundlerOpt;
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("expected OUT_DIR to be set by Cargo"));
@@ -16,7 +16,7 @@ fn main() {
         additional_watch_dirs: Vec::new(),
     };
 
-    if let Err(why) = wasm_run::bundler::run(opt) {
+    if let Err(why) = wasmbl::bundler::run(opt) {
         println!("Failed to build frontend. Error: {}", why);
         process::exit(1);
     }

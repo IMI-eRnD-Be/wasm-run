@@ -3,9 +3,9 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use structopt::StructOpt;
-use wasm_run::prelude::*;
+use wasmbl::prelude::*;
 
-#[wasm_run::main("frontend", "backend", other_cli_commands)]
+#[wasmbl::main("frontend", "backend", other_cli_commands)]
 #[derive(StructOpt, Debug)]
 enum Cli {
     BuildContainerImage,
@@ -45,7 +45,7 @@ fn other_cli_commands(cli: Cli, metadata: &Metadata, _package: &Package) -> anyh
             drop(f);
 
             let status = Command::new("docker")
-                .args(&["build", "-t", "wasm-run-example:latest", "."])
+                .args(&["build", "-t", "wasmbl-example:latest", "."])
                 .status()
                 .unwrap();
             if !status.success() {
