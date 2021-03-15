@@ -47,8 +47,5 @@ wasm-pack = "0.9.1"
 [workspace]
 members = [
     "examples/frontend-only",
-    "tests/test-cargo-helper",
-    "tests/test-crate-name-vs-pkg-name",
-    "tests/test-default-build-path",
     "wasmbl-proc-macro",
 ]

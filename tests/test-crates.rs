@@ -78,8 +78,8 @@ fn run_test_crates() {
 
     {
         let crate_path = tests.join("test-crate-name-vs-pkg-name");
-        let build_path = Path::new("build");
-        let _ = fs::remove_dir_all(build_path);
+        let build_path = crate_path.join("build");
+        let _ = fs::remove_dir_all(&build_path);
         run_crate(&crate_path, &["build"]);
         assert!(
             build_path.exists(),
