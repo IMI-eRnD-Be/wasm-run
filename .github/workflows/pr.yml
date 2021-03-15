@@ -19,7 +19,7 @@ jobs:
       - name: Install sccache
         run: |
           curl -sSL https://github.com/mozilla/sccache/releases/download/v0.2.15/sccache-v0.2.15-x86_64-unknown-linux-musl.tar.gz \
-            | tar xz --strip-components=1 --wildcards \*/sccache-dist
+            | tar xz --strip-components=1 --wildcards \*/sccache
           chmod +x sccache
           echo '[build]' >> ~/.cargo/config
           echo 'rustc-wrapper = "'"$PWD/sccache"'"' >> ~/.cargo/config
