@@ -52,17 +52,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      - name: cargo test -- examples
+      - name: cargo test --test examples
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- examples
+          args: --workspace --test examples
 
-      - name: cargo test -- test_crates
+      - name: cargo test --test test-crates
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- test_crates
+          args: --workspace --test test-crates
 
   test-windows:
     needs: [lint, test-linux]
@@ -75,17 +75,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1
 
-      - name: cargo test -- examples
+      - name: cargo test --test examples
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- examples
+          args: --workspace --test examples
 
-      - name: cargo test -- test_crates
+      - name: cargo test --test test-crates
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- test_crates
+          args: --workspace --test test-crates
 
   test-osx-x86:
     needs: [lint, test-linux]
@@ -98,14 +98,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1
 
-      - name: cargo test -- examples
+      - name: cargo test --test examples
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- examples
+          args: --workspace --test examples
 
-      - name: cargo test -- test_crates
+      - name: cargo test --test test-crates
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- test_crates
+          args: --workspace --test test-crates
