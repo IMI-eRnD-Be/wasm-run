@@ -6,11 +6,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_TARGET_DIR: $GITHUB_WORKSPACE/repos/wasmbl/target
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}/target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -37,6 +38,8 @@ jobs:
 
   test-linux:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}/target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -64,6 +67,8 @@ jobs:
   test-windows:
     needs: [lint, test-linux]
     runs-on: windows-latest
+    env:
+      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}\target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -85,6 +90,8 @@ jobs:
   test-osx-x86:
     needs: [lint, test-linux]
     runs-on: macos-latest
+    env:
+      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}/target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
