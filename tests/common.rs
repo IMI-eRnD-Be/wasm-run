@@ -7,21 +7,27 @@ use std::process::{Command, Stdio};
 pub fn clean(path: &Path) {
     let metadata = MetadataCommand::new().current_dir(&path).exec().unwrap();
     let members: HashSet<_> = metadata.workspace_members.iter().collect();
-    for package in metadata.packages {
-        if members.contains(&package.id) {
-            let output = Command::new("cargo")
-                .current_dir(&path)
-                .args(&["clean", "-p"])
-                .arg(package.name)
-                .output()
-                .unwrap();
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
+    let members: Vec<_> = metadata
+        .packages
+        .iter()
+        .filter(|x| members.contains(&x.id))
+        .collect();
+    if members.iter().any(|x| x.name == env!("CARGO_PKG_NAME")) {
+        return;
+    }
+    for package in members {
+        let output = Command::new("cargo")
+            .current_dir(&path)
+            .args(&["clean", "-p"])
+            .arg(&package.name)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
 
-            println!("stdout:\n{}\n", stdout);
-            eprintln!("stderr:\n{}\n", stderr);
-            assert!(output.status.success(), "clean failed: {}", path.display(),);
-        }
+        println!("stdout:\n{}\n", stdout);
+        eprintln!("stderr:\n{}\n", stderr);
+        assert!(output.status.success(), "clean failed: {}", path.display(),);
     }
 }
 
