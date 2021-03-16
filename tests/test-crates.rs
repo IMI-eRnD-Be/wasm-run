@@ -1,79 +1,12 @@
+pub mod common;
+
 use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::Path;
 
-fn run_crate(path: &Path, args: &[&str]) {
-    let output = Command::new("cargo")
-        .current_dir(path)
-        .args(&["run"])
-        .arg("--")
-        .args(args)
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    println!("stdout:\n{}\n", stdout);
-    eprintln!("stderr:\n{}\n", stderr);
-    assert!(
-        output.status.success(),
-        "run failed: {} args: {:?}",
-        path.display(),
-        args,
-    );
-}
-
-fn test_crate(path: &Path) {
-    let output = Command::new("cargo")
-        .current_dir(path)
-        .args(&["test"])
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    println!("stdout:\n{}\n", stdout);
-    eprintln!("stderr:\n{}\n", stderr);
-    assert!(output.status.success(), "test failed: {}", path.display(),);
-}
-
-fn build_crate(path: &Path) -> Option<PathBuf> {
-    use io::Read;
-
-    let mut child = Command::new("cargo")
-        .current_dir(path)
-        .args(&["build", "--message-format=json-render-diagnostics"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let mut out_dir = None;
-    let reader = io::BufReader::new(child.stdout.take().unwrap());
-    for message in cargo_metadata::Message::parse_stream(reader) {
-        use cargo_metadata::Message;
-
-        match message.unwrap() {
-            Message::BuildScriptExecuted(script) => {
-                out_dir = Some(script.out_dir);
-            }
-            _ => (),
-        }
-    }
-
-    let status = child.wait().expect("Couldn't get cargo's exit status");
-    let mut stderr = String::new();
-    &child.stderr.unwrap().read_to_string(&mut stderr).unwrap();
-    eprintln!("stderr:\n{}\n", stderr);
-
-    assert!(status.success(), "build failed: {}", path.display(),);
-
-    out_dir
-}
+use common::*;
 
 #[test]
-fn run_test_crates() {
+fn test_crates() {
     let tests = Path::new("tests");
 
     {

@@ -1,74 +1,11 @@
-use std::io;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+pub mod common;
 
-fn run_cargo(path: &Path, args: &[&str]) {
-    let output = Command::new("cargo")
-        // NOTE: this variable forces cargo to use the same toolchain but for the Rocket example
-        //       we need nightly.
-        .env_remove("RUSTUP_TOOLCHAIN")
-        .current_dir(path)
-        .args(args)
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+use std::path::Path;
 
-    println!("stdout:\n{}\n", stdout);
-    eprintln!("stderr:\n{}\n", stderr);
-    assert!(output.status.success());
-}
-
-fn test_crate(path: &Path) {
-    let output = Command::new("cargo")
-        .current_dir(path)
-        .args(&["test"])
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    println!("stdout:\n{}\n", stdout);
-    eprintln!("stderr:\n{}\n", stderr);
-    assert!(output.status.success(), "test failed: {}", path.display(),);
-}
-
-fn build_crate(path: &Path) -> Option<PathBuf> {
-    use io::Read;
-
-    let mut child = Command::new("cargo")
-        .current_dir(path)
-        .args(&["build", "--message-format=json-render-diagnostics"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let mut out_dir = None;
-    let reader = io::BufReader::new(child.stdout.take().unwrap());
-    for message in cargo_metadata::Message::parse_stream(reader) {
-        use cargo_metadata::Message;
-
-        match message.unwrap() {
-            Message::BuildScriptExecuted(script) => {
-                out_dir = Some(script.out_dir);
-            }
-            _ => (),
-        }
-    }
-
-    let status = child.wait().expect("Couldn't get cargo's exit status");
-    let mut stderr = String::new();
-    &child.stderr.unwrap().read_to_string(&mut stderr).unwrap();
-    eprintln!("stderr:\n{}\n", stderr);
-
-    assert!(status.success(), "build failed: {}", path.display(),);
-
-    out_dir
-}
+use common::*;
 
 #[test]
-fn build_example_crates() {
+fn examples() {
     let examples = Path::new("examples");
     run_cargo(
         &examples,
