@@ -11,7 +11,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     env:
-      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}/target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -39,7 +39,7 @@ jobs:
   test-linux:
     runs-on: ubuntu-latest
     env:
-      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}/target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -68,7 +68,7 @@ jobs:
     needs: [lint, test-linux]
     runs-on: windows-latest
     env:
-      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}\target
+      CARGO_TARGET_DIR: ${{ github.workspace }}\target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
@@ -91,7 +91,7 @@ jobs:
     needs: [lint, test-linux]
     runs-on: macos-latest
     env:
-      CARGO_TARGET_DIR: ${{ env.GITHUB_WORKSPACE }}/target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
