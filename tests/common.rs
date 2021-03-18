@@ -99,13 +99,15 @@ fn cargo_command(path: &Path) -> Command {
 
     command.current_dir(path);
 
+    /*
     #[cfg(windows)]
     command.env(
         "CARGO_TARGET_DIR",
         METADATA.target_directory.join("target-2"),
     );
+    */
 
-    #[cfg(unix)]
+    //#[cfg(unix)]
     command.env("CARGO_TARGET_DIR", &METADATA.target_directory);
 
     command

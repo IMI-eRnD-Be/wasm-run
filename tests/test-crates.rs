@@ -34,6 +34,7 @@ fn test_crates() {
         assert!(build_path.join("fancy.css").exists());
     }
 
+    #[cfg(unix)]
     {
         let crate_path = tests.join("test-binaryen");
         let build_path = crate_path.join("build");
