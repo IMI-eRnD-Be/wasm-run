@@ -19,12 +19,7 @@ pub fn clean(path: &Path) {
         return;
     }
     for package in members {
-        let output = Command::new("cargo")
-            .current_dir(&path)
-            .env(
-                "CARGO_TARGET_DIR",
-                METADATA.target_directory.join("target-2"),
-            )
+        let output = cargo_command(path)
             .args(&["clean", "-p"])
             .arg(&package.name)
             .output()
@@ -52,12 +47,7 @@ pub fn build_crate(path: &Path) -> Option<PathBuf> {
     use io::Read;
 
     clean(path);
-    let mut child = Command::new("cargo")
-        .current_dir(path)
-        .env(
-            "CARGO_TARGET_DIR",
-            METADATA.target_directory.join("target-2"),
-        )
+    let mut child = cargo_command(path)
         .args(&["build", "--message-format=json-render-diagnostics"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -89,15 +79,10 @@ pub fn build_crate(path: &Path) -> Option<PathBuf> {
 
 pub fn run_cargo(path: &Path, args: &[&str]) {
     clean(path);
-    let output = Command::new("cargo")
+    let output = cargo_command(path)
         // NOTE: this variable forces cargo to use the same toolchain but for the Rocket example
         //       we need nightly.
         .env_remove("RUSTUP_TOOLCHAIN")
-        .current_dir(path)
-        .env(
-            "CARGO_TARGET_DIR",
-            METADATA.target_directory.join("target-2"),
-        )
         .args(args)
         .output()
         .unwrap();
@@ -107,4 +92,21 @@ pub fn run_cargo(path: &Path, args: &[&str]) {
     println!("stdout:\n{}\n", stdout);
     eprintln!("stderr:\n{}\n", stderr);
     assert!(output.status.success());
+}
+
+fn cargo_command(path: &Path) -> Command {
+    let mut command = Command::new("cargo");
+
+    command.current_dir(path);
+
+    #[cfg(windows)]
+    command.env(
+        "CARGO_TARGET_DIR",
+        METADATA.target_directory.join("target-2"),
+    );
+
+    #[cfg(unix)]
+    command.env("CARGO_TARGET_DIR", &METADATA.target_directory);
+
+    command
 }
