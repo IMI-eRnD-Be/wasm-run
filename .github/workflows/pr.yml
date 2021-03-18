@@ -63,18 +63,19 @@ jobs:
   test-windows:
     needs: [lint, test-linux]
     runs-on: windows-latest
+    env:
+      CARGO_BUILD_JOBS: 1
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
 
       - uses: Swatinem/rust-cache@v1
 
-# TODO: does not work on Windows. Lock indefinitely for some reason
-#      - name: cargo test --test examples
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: test
-#          args: --workspace --test examples
+      - name: cargo test --test examples
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --test examples
 
       - name: cargo test --test test-crates
         uses: actions-rs/cargo@v1
