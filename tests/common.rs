@@ -1,8 +1,11 @@
-use cargo_metadata::MetadataCommand;
+use cargo_metadata::{Metadata, MetadataCommand};
+use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+static METADATA: Lazy<Metadata> = Lazy::new(|| MetadataCommand::new().exec().unwrap());
 
 pub fn clean(path: &Path) {
     let metadata = MetadataCommand::new().current_dir(&path).exec().unwrap();
@@ -18,6 +21,10 @@ pub fn clean(path: &Path) {
     for package in members {
         let output = Command::new("cargo")
             .current_dir(&path)
+            .env(
+                "CARGO_TARGET_DIR",
+                METADATA.target_directory.join("target-2"),
+            )
             .args(&["clean", "-p"])
             .arg(&package.name)
             .output()
@@ -47,6 +54,10 @@ pub fn build_crate(path: &Path) -> Option<PathBuf> {
     clean(path);
     let mut child = Command::new("cargo")
         .current_dir(path)
+        .env(
+            "CARGO_TARGET_DIR",
+            METADATA.target_directory.join("target-2"),
+        )
         .args(&["build", "--message-format=json-render-diagnostics"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -83,6 +94,10 @@ pub fn run_cargo(path: &Path, args: &[&str]) {
         //       we need nightly.
         .env_remove("RUSTUP_TOOLCHAIN")
         .current_dir(path)
+        .env(
+            "CARGO_TARGET_DIR",
+            METADATA.target_directory.join("target-2"),
+        )
         .args(args)
         .output()
         .unwrap();
