@@ -1,13 +1,13 @@
 [package]
-name = "wasm-run-proc-macro"
-version = "0.7.0"
+name = "wasmbl-proc-macro"
+version = "0.1.0"
 authors = ["Cecile Tonglet <cecile.tonglet@cecton.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/IMI-eRnD-Be/wasm-run"
-homepage = "https://github.com/IMI-eRnD-Be/wasm-run"
-documentation = "https://docs.rs/wasm-run"
+repository = "https://github.com/IMI-eRnD-Be/wasmbl"
+homepage = "https://github.com/IMI-eRnD-Be/wasmbl"
+documentation = "https://docs.rs/wasmbl"
 include = ["src/**/*.rs", "README.md", "LICENSE.Apache-2.0", "LICENSE.MIT"]
 keywords = ["wasm", "cargo"]
 categories = ["development-tools::build-utils"]
@@ -28,5 +28,5 @@ quote = "1.0.7"
 syn = { version = "1.0.53", features = ["full"] }
 
 [dev-dependencies]
-wasm-run = { path = ".." }
+wasmbl = { path = ".." }
 structopt = "0.3"

@@ -1,0 +1,21 @@
+[package]
+name = "frontend"
+version = "0.1.0"
+authors = ["David Ed Mellum <david@edmellum.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bevy = {version = "0.4.0", default-features = false, features = ["bevy_gltf", "bevy_winit", "render", "png"]}
+bevy_webgl2 = {version="0.4.0"}
+winit = {version = "0.24.0"}
+rand = "0.7"
+getrandom = {version="0.1", features=["wasm-bindgen"]}
+wasm-bindgen = "0.2"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-Os']

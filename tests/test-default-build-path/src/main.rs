@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use structopt::StructOpt;
-use wasm_run::prelude::*;
+use wasmbl::prelude::*;
 
-#[wasm_run::main(default_build_path)]
+#[wasmbl::main(default_build_path)]
 #[derive(StructOpt, Debug)]
 enum Cli {}
 

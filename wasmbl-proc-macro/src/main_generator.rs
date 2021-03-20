@@ -34,13 +34,13 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     let build_ty = if let Some(ty) = build_args {
         quote! { #ty }
     } else {
-        quote! { ::wasm_run::DefaultBuildArgs }
+        quote! { ::wasmbl::DefaultBuildArgs }
     };
 
     let serve_ty = if let Some(ty) = serve_args {
         quote! { #ty }
     } else {
-        quote! { ::wasm_run::DefaultServeArgs }
+        quote! { ::wasmbl::DefaultServeArgs }
     };
 
     let span = other_cli_commands.span();
@@ -176,20 +176,20 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
         #item
 
         impl #ident {
-            fn build() -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
+            fn build() -> ::wasmbl::prelude::anyhow::Result<::std::path::PathBuf>
             {
-                use ::wasm_run::BuildArgs;
+                use ::wasmbl::BuildArgs;
                 let build_args = #build_ty::from_iter_safe(&[#frontend_pkg_name])?;
                 build_args.run()
             }
 
             fn build_with_args<I>(iter: I)
-            -> ::wasm_run::prelude::anyhow::Result<::std::path::PathBuf>
+            -> ::wasmbl::prelude::anyhow::Result<::std::path::PathBuf>
             where
                 I: ::std::iter::IntoIterator,
                 I::Item: ::std::convert::Into<::std::ffi::OsString> + Clone,
             {
-                use ::wasm_run::BuildArgs;
+                use ::wasmbl::BuildArgs;
                 let iter = ::std::iter::once(::std::ffi::OsString::from(#frontend_pkg_name))
                     .chain(iter.into_iter().map(|x| x.into()));
                 let build_args = #build_ty::from_iter_safe(iter)?;
@@ -197,18 +197,18 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
             }
         }
 
-        fn main() -> ::wasm_run::prelude::anyhow::Result<()> {
+        fn main() -> ::wasmbl::prelude::anyhow::Result<()> {
             use ::std::path::PathBuf;
-            use ::wasm_run::structopt::StructOpt;
-            use ::wasm_run::prelude::*;
+            use ::wasmbl::structopt::StructOpt;
+            use ::wasmbl::prelude::*;
 
-            #[derive(::wasm_run::structopt::StructOpt)]
+            #[derive(::wasmbl::structopt::StructOpt)]
             struct WasmRunCli {
                 #[structopt(subcommand)]
                 command: Option<WasmRunCliCommand>,
             }
 
-            #[derive(::wasm_run::structopt::StructOpt)]
+            #[derive(::wasmbl::structopt::StructOpt)]
             enum WasmRunCliCommand {
                 Build(#build_ty),
                 Serve(#serve_ty),
@@ -228,7 +228,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
                 .. Hooks::default()
             };
 
-            let (metadata, package) = ::wasm_run::wasm_run_init(
+            let (metadata, package) = ::wasmbl::wasmbl_init(
                 #frontend_pkg_name,
                 #backend_pkg_name,
                 #default_build_path,

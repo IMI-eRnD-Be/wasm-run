@@ -1,7 +1,7 @@
 use structopt::StructOpt;
-use wasm_run::prelude::*;
+use wasmbl::prelude::*;
 
-#[wasm_run::main(other_cli_commands)]
+#[wasmbl::main(other_cli_commands)]
 #[derive(StructOpt, Debug)]
 enum Cli {
     Test,
