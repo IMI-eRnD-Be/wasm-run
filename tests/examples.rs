@@ -22,6 +22,7 @@ fn examples() {
         &["run", "-p", "run", "--", "build-container-image"],
     );
 
+    #[cfg(unix)]
     {
         let crate_path = examples.join("bundler");
         //let build_path = crate_path.join("public");

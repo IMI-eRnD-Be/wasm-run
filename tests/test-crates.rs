@@ -66,6 +66,7 @@ fn test_crates() {
         assert!(build_path.join("subdirectory").join("test7.css").exists());
     }
 
+    #[cfg(unix)]
     {
         let crate_path = tests.join("test-bundler");
         //let build_path = crate_path.join("public");
