@@ -3,3 +3,7 @@ Cargo.lock
 build
 public
 Dockerfile
+
+# web-bundler
+web-target
+backend-bin

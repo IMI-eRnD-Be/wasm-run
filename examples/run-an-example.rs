@@ -7,6 +7,6 @@
 use structopt::StructOpt;
 
 // This will use the crate "frontend-only" in the workspace as frontend
-#[wasm_run::main("frontend-only")]
+#[wasmbl::main("frontend-only")]
 #[derive(StructOpt, Debug)]
 enum Cli {}

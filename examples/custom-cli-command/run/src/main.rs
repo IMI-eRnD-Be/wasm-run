@@ -3,9 +3,9 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use structopt::StructOpt;
-use wasm_run::prelude::*;
+use wasmbl::prelude::*;
 
-#[wasm_run::main("frontend", "backend", other_cli_commands)]
+#[wasmbl::main("frontend", "backend", other_cli_commands)]
 #[derive(StructOpt, Debug)]
 enum Cli {
     BuildContainerImage,
@@ -30,22 +30,27 @@ fn other_cli_commands(cli: Cli, metadata: &Metadata, _package: &Package) -> anyh
                     ]);
                 })?
                 .wait_success()?;
+            fs::copy(
+                metadata
+                    .target_directory
+                    .join("x86_64-unknown-linux-musl")
+                    .join("release")
+                    .join("backend"),
+                "backend-bin",
+            )?;
 
             println!("Building container image...");
 
             let dockerfile = Path::new("Dockerfile");
             let mut f = fs::File::create(&dockerfile)?;
             writeln!(f, "FROM gcr.io/distroless/static")?;
-            writeln!(
-                f,
-                "ADD target/x86_64-unknown-linux-musl/release/backend /backend"
-            )?;
+            writeln!(f, "ADD backend-bin /backend")?;
             writeln!(f, "ADD build /build")?;
             writeln!(f, "ENTRYPOINT [\"/backend\"]")?;
             drop(f);
 
             let status = Command::new("docker")
-                .args(&["build", "-t", "wasm-run-example:latest", "."])
+                .args(&["build", "-t", "wasmbl-example:latest", "."])
                 .status()
                 .unwrap();
             if !status.success() {

@@ -8,7 +8,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  cargo-test-and-lint:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -22,12 +22,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      - name: cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace
-
       - name: rustfmt
         uses: actions-rs/cargo@v1
         with:
@@ -40,29 +34,57 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: -- -D warnings
 
-  build-windows:
-    needs: [cargo-test-and-lint]
-    runs-on: windows-latest
+  test-linux:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v2
 
       - uses: Swatinem/rust-cache@v1
 
-      - name: Install target wasm32-unknown-unknown
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
 
-      - name: cargo test (windows)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: cargo test --test examples
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace
+          args: --workspace --test examples
 
-  build-osx-x86:
-    needs: [cargo-test-and-lint]
+      - name: cargo test --test test-crates
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --test test-crates
+
+  test-windows:
+    needs: [lint, test-linux]
+    runs-on: windows-latest
+    env:
+      CARGO_BUILD_JOBS: 1
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: cargo test --test examples
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --test examples
+
+      - name: cargo test --test test-crates
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --test test-crates
+
+  test-osx-x86:
+    needs: [lint, test-linux]
     runs-on: macos-latest
     steps:
       - name: Checkout source
@@ -70,14 +92,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v1
 
-      - name: Install target wasm32-unknown-unknown
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
-      - name: cargo test (OSX x86)
+      - name: cargo test --test examples
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace
+          args: --workspace --test examples
+
+      - name: cargo test --test test-crates
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --workspace --test test-crates

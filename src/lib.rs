@@ -1,17 +1,17 @@
-//! ![Rust](https://github.com/IMI-eRnD-Be/wasm-run/workflows/main/badge.svg)
-//! [![Latest Version](https://img.shields.io/crates/v/wasm-run.svg)](https://crates.io/crates/wasm-run)
-//! [![Docs.rs](https://docs.rs/wasm-run/badge.svg)](https://docs.rs/wasm-run)
-//! [![LOC](https://tokei.rs/b1/github/IMI-eRnD-Be/wasm-run)](https://github.com/IMI-eRnD-Be/wasm-run)
-//! [![Dependency Status](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run/status.svg)](https://deps.rs/repo/github/IMI-eRnD-Be/wasm-run)
-//! ![License](https://img.shields.io/crates/l/wasm-run)
+//! ![Rust](https://github.com/IMI-eRnD-Be/wasmbl/workflows/main/badge.svg)
+//! [![Latest Version](https://img.shields.io/crates/v/wasmbl.svg)](https://crates.io/crates/wasmbl)
+//! [![Docs.rs](https://docs.rs/wasmbl/badge.svg)](https://docs.rs/wasmbl)
+//! [![LOC](https://tokei.rs/b1/github/IMI-eRnD-Be/wasmbl)](https://github.com/IMI-eRnD-Be/wasmbl)
+//! [![Dependency Status](https://deps.rs/repo/github/IMI-eRnD-Be/wasmbl/status.svg)](https://deps.rs/repo/github/IMI-eRnD-Be/wasmbl)
+//! ![License](https://img.shields.io/crates/l/wasmbl)
 //!
 //! # Synopsis
 //!
-//! Build tool that replaces `cargo run` to build WASM projects. Just like webpack, `wasm-run`
+//! Build tool that replaces `cargo run` to build WASM projects. Just like webpack, `wasmbl`
 //! offers a great deal of customization.
 //!
 //! To build your WASM project you normally need an external tool like `wasm-bindgen`, `wasm-pack`
-//! or `cargo-wasm`. `wasm-run` takes a different approach: it's a library that you install as a
+//! or `cargo-wasm`. `wasmbl` takes a different approach: it's a library that you install as a
 //! dependency to your project. Because of that you don't need any external tool, the
 //! tooling is built as part of your dependencies, which makes the CI easier to set up and reduce
 //! the hassle for new comers to start working on the project.
@@ -33,13 +33,13 @@
 //!
 //! There are 3 basic examples to help you get started quickly:
 //!
-//!  -  a ["basic"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/basic) example for a
+//!  -  a ["basic"](https://github.com/IMI-eRnD-Be/wasmbl/tree/main/examples/basic) example for a
 //!     frontend only app that rebuilds the app when a file change is detected;
-//!  -  a ["backend-and-frontend"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/backend-and-frontend)
+//!  -  a ["backend-and-frontend"](https://github.com/IMI-eRnD-Be/wasmbl/tree/main/examples/backend-and-frontend)
 //!     example using the web framework Rocket (backend) which uses Rocket itself to serve the file
 //!     during the development (any file change is also detected and it rebuilds and restart
 //!     automatically).
-//!  -  a ["custom-cli-command"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/custom-cli-command)
+//!  -  a ["custom-cli-command"](https://github.com/IMI-eRnD-Be/wasmbl/tree/main/examples/custom-cli-command)
 //!     example that adds a custom CLI command named `build-docker-image` which build the backend,
 //!     the frontend and package the whole thing in a container image.
 //!
@@ -52,7 +52,7 @@
 //!  *  You can use this library to build examples in the `examples/` directory of your project.
 //!     `cargo run --example your_example -- serve`. But you will need to specify the name of the
 //!     WASM crate in your project and it must be present in the workspace. Please check the
-//!     ["run-an-example"](https://github.com/IMI-eRnD-Be/wasm-run/blob/main/examples/run-an-example.rs)
+//!     ["run-an-example"](https://github.com/IMI-eRnD-Be/wasmbl/blob/main/examples/run-an-example.rs)
 //!     example.
 //!  *  If you want to use your own backend you will need to disable the `dev-server` feature
 //!     by disabling the default features. You can use the `full-restart` feature to force the
@@ -76,7 +76,7 @@
 //!     in the build directory. This can be configured by overriding:
 //!     [`BuildArgs::build_sass_from_dir`], [`BuildArgs::sass_lookup_directories`],
 //!     [`BuildArgs::sass_options`] or completely overriden in the [`Hooks::post_build`] hook.
-//!     `sass-rs` is re-exported in the prelude of `wasm-run` for this purpose.
+//!     `sass-rs` is re-exported in the prelude of `wasmbl` for this purpose.
 //!  *  `full-restart`: when this feature is active, the command is entirely restarted when changes
 //!     are detected when serving files for development (`cargo run -- serve`). This is useful with
 //!     custom `serve` command that uses a custom backend and if you need to detect changes in the
@@ -84,6 +84,11 @@
 
 #![warn(missing_docs)]
 
+/// Merge of web-bundler.
+///
+/// TODO: This is the simple first iteration, we need to integrate properly.
+#[cfg(feature = "sass")]
+pub mod bundler;
 #[cfg(feature = "prebuilt-wasm-opt")]
 mod prebuilt_wasm_opt;
 
@@ -108,7 +113,7 @@ use structopt::StructOpt;
 #[cfg(feature = "dev-server")]
 use tide::Server;
 
-pub use wasm_run_proc_macro::*;
+pub use wasmbl_proc_macro::*;
 
 #[doc(hidden)]
 pub use structopt;
@@ -134,7 +139,7 @@ pub enum BuildProfile {
 
 /// This function is called early before any command starts. This is not part of the public API.
 #[doc(hidden)]
-pub fn wasm_run_init(
+pub fn wasmbl_init(
     pkg_name: &str,
     backend_pkg_name: Option<&str>,
     default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
@@ -283,8 +288,9 @@ pub trait BuildArgs: Downcast {
                 Ok(x) => Some(x),
                 Err(err) => {
                     eprintln!(
-                        "WARNING: could not walk into directory: `{}`",
-                        input_dir.display()
+                        "WARNING: could not walk into directory `{}`: {}",
+                        input_dir.display(),
+                        err,
                     );
                     None
                 }
@@ -346,7 +352,7 @@ pub trait BuildArgs: Downcast {
     where
         Self: Sized + 'static,
     {
-        let hooks = HOOKS.get().expect("wasm_run_init() has not been called");
+        let hooks = HOOKS.get().expect("wasmbl_init() has not been called");
         build(BuildProfile::Release, &self, hooks)?;
         Ok(self.build_path().to_owned())
     }
@@ -412,7 +418,7 @@ pub trait ServeArgs: Downcast + Send {
     where
         Self: Sync + Sized + 'static,
     {
-        let hooks = HOOKS.get().expect("wasm_run_init() has not been called");
+        let hooks = HOOKS.get().expect("wasmbl_init() has not been called");
         // NOTE: the first step for serving is to call `build` a first time. The build directory
         //       must be present before we start watching files there.
         build(BuildProfile::Dev, self.build_args(), hooks)?;
@@ -999,16 +1005,16 @@ impl Drop for CargoChild {
     }
 }
 
-/// The wasm-run Prelude
+/// The wasmbl Prelude
 ///
 /// The purpose of this module is to alleviate imports of many common types:
 ///
 /// ```
 /// # #![allow(unused_imports)]
-/// use wasm_run::prelude::*;
+/// use wasmbl::prelude::*;
 /// ```
 pub mod prelude {
-    pub use wasm_run_proc_macro::*;
+    pub use wasmbl_proc_macro::*;
 
     pub use anyhow;
     #[cfg(feature = "dev-server")]

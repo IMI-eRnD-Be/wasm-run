@@ -1,25 +1,11 @@
+pub mod common;
+
 use std::path::Path;
-use std::process::Command;
 
-fn run_cargo(path: &Path, args: &[&str]) {
-    let output = Command::new("cargo")
-        // NOTE: this variable forces cargo to use the same toolchain but for the Rocket example
-        //       we need nightly.
-        .env_remove("RUSTUP_TOOLCHAIN")
-        .current_dir(path)
-        .args(args)
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    println!("stdout:\n{}\n", stdout);
-    eprintln!("stderr:\n{}\n", stderr);
-    assert!(output.status.success());
-}
+use common::*;
 
 #[test]
-fn build_example_crates() {
+fn examples() {
     let examples = Path::new("examples");
     run_cargo(
         &examples,
@@ -35,4 +21,17 @@ fn build_example_crates() {
         &examples.join("custom-cli-command"),
         &["run", "-p", "run", "--", "build-container-image"],
     );
+
+    #[cfg(unix)]
+    {
+        let crate_path = examples.join("bundler");
+        //let build_path = crate_path.join("public");
+        // ./target/debug/build/backend-b938b1376b56fe6c/out/ui
+        //let _ = fs::remove_dir_all(&build_path);
+        let out_dir = build_crate(&crate_path);
+        let out_dir = out_dir.unwrap();
+        assert!(out_dir.join("ui").join("app-0.0.0.wasm").exists());
+        assert!(out_dir.join("ui").join("index.html").exists());
+        test_crate(&crate_path);
+    }
 }

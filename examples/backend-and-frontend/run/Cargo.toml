@@ -6,4 +6,4 @@ edition = "2018"
 
 [dependencies]
 structopt = "0.3"
-wasm-run = { path = "../../..", default-features = false, features = [] }
+wasmbl = { path = "../../..", default-features = false, features = [] }
