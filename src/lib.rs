@@ -738,6 +738,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
 
     let mut output = Bindgen::new()
         .input_path(wasm_path)
+        .out_name("app")
         .web(true)
         .expect("fails only if multiple modes specified; qed")
         .debug(!matches!(profile, BuildProfile::Release))
