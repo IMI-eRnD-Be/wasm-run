@@ -118,7 +118,7 @@ pub use wasmbl_proc_macro::*;
 #[doc(hidden)]
 pub use structopt;
 
-const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init();</script></head><body></body></html>"#;
+const DEFAULT_INDEX: &str = r#"<!DOCTYPE html><html><head><meta charset="utf-8"/><script type="module">import init from "/app.js";init(new URL('app_bg.wasm', import.meta.url));</script></head><body></body></html>"#;
 
 static METADATA: OnceCell<Metadata> = OnceCell::new();
 static DEFAULT_BUILD_PATH: OnceCell<PathBuf> = OnceCell::new();
