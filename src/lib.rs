@@ -644,7 +644,7 @@ impl Default for Hooks {
                     {
                         let options = args.sass_options(profile);
                         for style_path in args.sass_lookup_directories(profile) {
-                            trace!("building SASS from {}", &style_path);
+                            trace!("building SASS from {}", style_path.to_string_lossy());
                             args.build_sass_from_dir(&style_path, options.clone())?;
                         }
                     }
