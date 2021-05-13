@@ -14,8 +14,8 @@ categories = ["development-tools::build-utils"]
 description = "Build tool that replaces `cargo run` to build WASM projects"
 
 [features]
-default = ["mini-http-server", "prebuilt-wasm-opt"]
-mini-http-server = ["tide", "async-std", "wasm-run-proc-macro/serve"]
+default = ["dev-server", "prebuilt-wasm-opt"]
+dev-server = ["tide", "async-std", "wasm-run-proc-macro/serve"]
 prebuilt-wasm-opt = ["binary-install", "platforms", "tempfile"]
 sass = ["sass-rs", "walkdir"]
 
