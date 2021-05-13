@@ -96,6 +96,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use fs_extra::dir;
+use log::{error, info, warn};
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
 use std::collections::{HashMap, HashSet};
@@ -145,6 +146,8 @@ pub fn wasmbl_init(
     default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
     hooks: Hooks,
 ) -> Result<(&'static Metadata, &'static Package)> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let metadata = MetadataCommand::new()
         .exec()
         .context("this binary is not meant to be ran outside of its workspace")?;
@@ -287,8 +290,8 @@ pub trait BuildArgs: Downcast {
             .filter_map(|x| match x {
                 Ok(x) => Some(x),
                 Err(err) => {
-                    eprintln!(
-                        "WARNING: could not walk into directory `{}`: {}",
+                    warn!(
+                        "could not walk into directory `{}`: {}",
                         input_dir.display(),
                         err,
                     );
@@ -773,7 +776,7 @@ fn serve_frontend(
 
     (hooks.serve)(args, &mut app)?;
 
-    eprintln!(
+    info!(
         "Development server started: http://{}:{}",
         args.ip(),
         args.port()
@@ -852,11 +855,11 @@ fn watch_loop(
                         .unwrap_or(false) =>
             {
                 if let Err(err) = callback() {
-                    eprintln!("{}", err);
+                    error!("{}", err);
                 }
             }
             Ok(_) => {}
-            Err(e) => eprintln!("watch error: {}", e),
+            Err(e) => error!("watch error: {}", e),
         }
     }
 }
@@ -929,7 +932,7 @@ fn wasm_opt(
         Ok(output.stdout)
     };
 
-    eprintln!("WARNING: no optimization has been done on the WASM");
+    warn!("no optimization has been done on the WASM");
     Ok(binary)
 }
 
