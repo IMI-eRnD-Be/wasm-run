@@ -96,7 +96,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use fs_extra::dir;
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
 use std::collections::{HashMap, HashSet};
@@ -644,6 +644,7 @@ impl Default for Hooks {
                     {
                         let options = args.sass_options(profile);
                         for style_path in args.sass_lookup_directories(profile) {
+                            trace!("building SASS from {}", &style_path);
                             args.build_sass_from_dir(&style_path, options.clone())?;
                         }
                     }
@@ -684,6 +685,8 @@ impl Default for Hooks {
 fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
+    info!("building frontend package");
+
     if args.profiling() {
         profile = BuildProfile::Profiling;
     }
@@ -716,6 +719,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Dev => &[],
         });
 
+    trace!("running pre-build hooks");
     (hooks.pre_build)(args, profile, &mut command)?;
 
     let status = command.status().context("could not start build process")?;
@@ -757,6 +761,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         BuildProfile::Dev => wasm_bin,
     };
 
+    trace!("running post-build hooks");
     (hooks.post_build)(args, profile, wasm_js, wasm_bin)?;
 
     Ok(())
