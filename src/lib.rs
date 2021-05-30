@@ -96,7 +96,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use cargo_metadata::{Metadata, MetadataCommand, Package};
 use downcast_rs::*;
 use fs_extra::dir;
-use log::{error, info, trace, warn};
 use notify::RecommendedWatcher;
 use once_cell::sync::OnceCell;
 use std::collections::{HashMap, HashSet};
@@ -284,6 +283,8 @@ pub trait BuildArgs: Downcast {
                 .map(|x| x.starts_with("_"))
                 .unwrap_or(false)
         }
+
+        log::trace!("building SASS from {}", input_dir.to_string_lossy());
 
         let walker = WalkDir::new(&input_dir).into_iter();
         for entry in walker
@@ -644,7 +645,6 @@ impl Default for Hooks {
                     {
                         let options = args.sass_options(profile);
                         for style_path in args.sass_lookup_directories(profile) {
-                            trace!("building SASS from {}", style_path.to_string_lossy());
                             args.build_sass_from_dir(&style_path, options.clone())?;
                         }
                     }
@@ -685,7 +685,7 @@ impl Default for Hooks {
 fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
-    info!("building frontend package");
+    log::info!("building frontend package");
 
     if args.profiling() {
         profile = BuildProfile::Profiling;
@@ -719,7 +719,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Dev => &[],
         });
 
-    trace!("running pre-build hooks");
+    log::trace!("running pre-build hooks");
     (hooks.pre_build)(args, profile, &mut command)?;
 
     let status = command.status().context("could not start build process")?;
@@ -761,7 +761,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         BuildProfile::Dev => wasm_bin,
     };
 
-    trace!("running post-build hooks");
+    log::trace!("running post-build hooks");
     (hooks.post_build)(args, profile, wasm_js, wasm_bin)?;
 
     Ok(())
@@ -781,7 +781,7 @@ fn serve_frontend(
 
     (hooks.serve)(args, &mut app)?;
 
-    info!(
+    log::info!(
         "Development server started: http://{}:{}",
         args.ip(),
         args.port()
@@ -860,11 +860,11 @@ fn watch_loop(
                         .unwrap_or(false) =>
             {
                 if let Err(err) = callback() {
-                    error!("{}", err);
+                    log::error!("{}", err);
                 }
             }
             Ok(_) => {}
-            Err(e) => error!("watch error: {}", e),
+            Err(e) => log::error!("watch error: {}", e),
         }
     }
 }
@@ -937,7 +937,7 @@ fn wasm_opt(
         Ok(output.stdout)
     };
 
-    warn!("no optimization has been done on the WASM");
+    log::warn!("no optimization has been done on the WASM");
     Ok(binary)
 }
 
