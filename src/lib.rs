@@ -913,9 +913,8 @@ fn wasm_opt(
         let delete_guard = {
             use std::io::Write;
 
-            let mut binary = binary;
             let tmp = tempfile::NamedTempFile::new()?;
-            tmp.as_file().write(&mut binary)?;
+            tmp.as_file().write_all(&binary)?;
             command.arg(tmp.path());
             tmp
         };
