@@ -291,7 +291,7 @@ pub trait BuildArgs: Downcast {
             .filter_map(|x| match x {
                 Ok(x) => Some(x),
                 Err(err) => {
-                    warn!(
+                    log::warn!(
                         "could not walk into directory `{}`: {}",
                         input_dir.display(),
                         err,
