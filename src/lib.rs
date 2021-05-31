@@ -284,7 +284,7 @@ pub trait BuildArgs: Downcast {
                 .unwrap_or(false)
         }
 
-        log::trace!("building SASS from {}", input_dir.to_string_lossy());
+        log::info!("Building SASS from {:?}", input_dir);
 
         let walker = WalkDir::new(&input_dir).into_iter();
         for entry in walker
@@ -292,7 +292,7 @@ pub trait BuildArgs: Downcast {
                 Ok(x) => Some(x),
                 Err(err) => {
                     log::warn!(
-                        "could not walk into directory `{}`: {}",
+                        "Could not walk into directory `{}`: {}",
                         input_dir.display(),
                         err,
                     );
@@ -685,7 +685,7 @@ impl Default for Hooks {
 fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
-    log::info!("building frontend package");
+    log::info!("Building frontend package");
 
     if args.profiling() {
         profile = BuildProfile::Profiling;
@@ -719,7 +719,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Dev => &[],
         });
 
-    log::trace!("running pre-build hooks");
+    log::info!("Running pre-build hook");
     (hooks.pre_build)(args, profile, &mut command)?;
 
     let status = command.status().context("could not start build process")?;
@@ -761,7 +761,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         BuildProfile::Dev => wasm_bin,
     };
 
-    log::trace!("running post-build hooks");
+    log::info!("Running post-build hook");
     (hooks.post_build)(args, profile, wasm_js, wasm_bin)?;
 
     Ok(())
@@ -864,7 +864,7 @@ fn watch_loop(
                 }
             }
             Ok(_) => {}
-            Err(e) => log::error!("watch error: {}", e),
+            Err(e) => log::error!("Watch error: {}", e),
         }
     }
 }
@@ -936,7 +936,7 @@ fn wasm_opt(
         Ok(output.stdout)
     };
 
-    log::warn!("no optimization has been done on the WASM");
+    log::warn!("No optimization has been done on the WASM");
     Ok(binary)
 }
 
