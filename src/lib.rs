@@ -685,8 +685,6 @@ impl Default for Hooks {
 fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Result<()> {
     use wasm_bindgen_cli_support::Bindgen;
 
-    log::info!("Building frontend package");
-
     if args.profiling() {
         profile = BuildProfile::Profiling;
     }
@@ -722,6 +720,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
     log::info!("Running pre-build hook");
     (hooks.pre_build)(args, profile, &mut command)?;
 
+    log::info!("Building frontend");
     let status = command.status().context("could not start build process")?;
 
     if !status.success() {
