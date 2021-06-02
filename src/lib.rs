@@ -140,6 +140,8 @@ pub fn wasm_run_init(
     default_build_path: Option<Box<dyn FnOnce(&Metadata, &Package) -> PathBuf>>,
     hooks: Hooks,
 ) -> Result<(&'static Metadata, &'static Package)> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let metadata = MetadataCommand::new()
         .exec()
         .context("this binary is not meant to be ran outside of its workspace")?;
@@ -277,14 +279,17 @@ pub trait BuildArgs: Downcast {
                 .unwrap_or(false)
         }
 
+        log::info!("Building SASS from {:?}", input_dir);
+
         let walker = WalkDir::new(&input_dir).into_iter();
         for entry in walker
             .filter_map(|x| match x {
                 Ok(x) => Some(x),
                 Err(err) => {
-                    eprintln!(
-                        "WARNING: could not walk into directory: `{}`",
-                        input_dir.display()
+                    log::warn!(
+                        "Could not walk into directory `{}`: {}",
+                        input_dir.display(),
+                        err,
                     );
                     None
                 }
@@ -707,8 +712,10 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
             BuildProfile::Dev => &[],
         });
 
+    log::info!("Running pre-build hook");
     (hooks.pre_build)(args, profile, &mut command)?;
 
+    log::info!("Building frontend");
     let status = command.status().context("could not start build process")?;
 
     if !status.success() {
@@ -748,6 +755,7 @@ fn build(mut profile: BuildProfile, args: &dyn BuildArgs, hooks: &Hooks) -> Resu
         BuildProfile::Dev => wasm_bin,
     };
 
+    log::info!("Running post-build hook");
     (hooks.post_build)(args, profile, wasm_js, wasm_bin)?;
 
     Ok(())
@@ -767,7 +775,7 @@ fn serve_frontend(
 
     (hooks.serve)(args, &mut app)?;
 
-    eprintln!(
+    log::info!(
         "Development server started: http://{}:{}",
         args.ip(),
         args.port()
@@ -846,11 +854,11 @@ fn watch_loop(
                         .unwrap_or(false) =>
             {
                 if let Err(err) = callback() {
-                    eprintln!("{}", err);
+                    log::error!("{}", err);
                 }
             }
             Ok(_) => {}
-            Err(e) => eprintln!("watch error: {}", e),
+            Err(e) => log::error!("Watch error: {}", e),
         }
     }
 }
@@ -899,9 +907,8 @@ fn wasm_opt(
         let delete_guard = {
             use std::io::Write;
 
-            let mut binary = binary;
             let tmp = tempfile::NamedTempFile::new()?;
-            tmp.as_file().write(&mut binary)?;
+            tmp.as_file().write_all(&binary)?;
             command.arg(tmp.path());
             tmp
         };
@@ -923,7 +930,7 @@ fn wasm_opt(
         Ok(output.stdout)
     };
 
-    eprintln!("WARNING: no optimization has been done on the WASM");
+    log::warn!("No optimization has been done on the WASM");
     Ok(binary)
 }
 
