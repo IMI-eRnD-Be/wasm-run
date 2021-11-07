@@ -576,7 +576,7 @@ impl Default for Hooks {
                 frontend
                     .dependencies
                     .iter()
-                    .map(|x| packages.get(x.name.as_str()).unwrap())
+                    .filter_map(|x| packages.get(x.name.as_str()))
                     .filter(|x| members.contains(&x.id))
                     .map(|x| x.manifest_path.parent().unwrap())
                     .chain(iter::once(frontend.manifest_path.parent().unwrap()))
