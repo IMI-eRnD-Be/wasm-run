@@ -122,7 +122,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     if let Some(pkg_name) = frontend_pkg_name.as_ref() {
         let span = pkg_name.span();
         let pkg_name = pkg_name.value();
-        if metadata.packages.iter().any(|x| x.name == pkg_name) {
+        if !metadata.packages.iter().any(|x| x.name == pkg_name) {
             return Err(Error::new(
                 span,
                 format!("package `{}` not found", pkg_name),
@@ -138,7 +138,7 @@ pub fn generate(item: ItemEnum, attr: Attr, metadata: &Metadata) -> syn::Result<
     if let Some(pkg_name) = backend_pkg_name.as_ref() {
         let span = pkg_name.span();
         let pkg_name = pkg_name.value();
-        if metadata.packages.iter().any(|x| x.name == pkg_name) {
+        if !metadata.packages.iter().any(|x| x.name == pkg_name) {
             return Err(Error::new(
                 span,
                 format!("package `{}` not found", pkg_name),
