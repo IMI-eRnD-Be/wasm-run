@@ -22,7 +22,7 @@ fn run_cargo(path: &Path, args: &[&str]) {
 fn build_example_crates() {
     let examples = Path::new("examples");
     run_cargo(
-        &examples,
+        examples,
         &["run", "--example", "run-an-example", "--", "build"],
     );
     run_cargo(
