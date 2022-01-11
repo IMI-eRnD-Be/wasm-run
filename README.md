@@ -35,8 +35,8 @@ only two files (`index.html`, `app_bg.wasm`).
 
 There are 3 basic examples to help you get started quickly:
 
- -  a ["basic"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/basic) example for a
-    frontend only app that rebuilds the app when a file change is detected;
+ -  a ["frontend-only"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/frontend-only)
+    example for a frontend only app that rebuilds the app when a file change is detected;
  -  a ["backend-and-frontend"](https://github.com/IMI-eRnD-Be/wasm-run/tree/main/examples/backend-and-frontend)
     example using the web framework Rocket (backend) which uses Rocket itself to serve the file
     during the development (any file change is also detected and it rebuilds and restart
