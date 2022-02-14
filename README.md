@@ -1,3 +1,7 @@
+**This repository is now deprecated in favor of
+[xtask-wasm](https://github.com/rustminded/xtask-wasm).
+Only patch fixes will be accepted.**
+
 # wasm-run
 
 ![Rust](https://github.com/IMI-eRnD-Be/wasm-run/workflows/main/badge.svg)
